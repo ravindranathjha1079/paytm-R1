@@ -6,6 +6,7 @@ using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
 using SeatRes.Api.Observability;
+using SeatRes.Api.Payments;
 using SeatRes.Api.Services;
 using Serilog;
 using Serilog.Events;
@@ -37,6 +38,9 @@ public static class ServiceRegistration
         services.AddSingleton<ReservationStore>();
         services.AddSingleton<OutcomeRecorder>();
         services.AddSingleton<ReservationService>();
+        services.AddSingleton<PaymentTx>();
+        services.AddSingleton<PaymentService>();
+        services.AddSingleton<IPaymentGateway, SimulatedGateway>();
         services.AddSeatResAuth();
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));

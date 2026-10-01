@@ -35,6 +35,7 @@ public class ApiFactory : WebApplicationFactory<Program>
 public class DbApiFactory(string connectionString, bool fastPath, IDictionary<string, string>? settings = null) : ApiFactory
 {
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 3, 10, 0, 0, TimeSpan.Zero));
+    public ScriptedGateway Gateway { get; } = new();
 
     protected override string ConnectionString => connectionString;
 
@@ -47,6 +48,8 @@ public class DbApiFactory(string connectionString, bool fastPath, IDictionary<st
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.RemoveAll<SeatRes.Api.Payments.IPaymentGateway>();
+            services.AddSingleton<SeatRes.Api.Payments.IPaymentGateway>(Gateway);
         });
     }
 
