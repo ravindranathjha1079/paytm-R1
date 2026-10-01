@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.github/
+.superpowers/
+.vs/
+.idea/
+tests/
+tools/
+docs/
+deploy/
+*.md
+.env

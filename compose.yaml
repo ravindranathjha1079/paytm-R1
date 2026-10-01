@@ -1,0 +1,88 @@
+# One stack for local runs and for the VM deployment (deploy/compose.prod.yaml overlays production settings).
+#   docker compose up -d --build
+name: seatres
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "50m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: seatres
+      POSTGRES_USER: seatres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seatres-local}
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB", "-c", "work_mem=8MB", "-c", "max_wal_size=1GB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seatres -d seatres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { cpus: "0.8", memory: 768M } } }
+    restart: unless-stopped
+    logging: *logging
+
+  api:
+    build: .
+    image: ${API_IMAGE:-seatres-api:local}
+    environment:
+      ConnectionStrings__Db: "Host=postgres;Database=seatres;Username=seatres;Password=${POSTGRES_PASSWORD:-seatres-local};Maximum Pool Size=30;Timeout=30;Command Timeout=15;Keepalive=30"
+      Auth__JwtKey: ${JWT_KEY:-local-dev-signing-key-change-me-0123456789}
+      Auth__AdminKey: ${ADMIN_KEY:-local-admin-key}
+      Gateway__LatencyMillis: ${GATEWAY_LATENCY_MS:-30}
+    ports: ["${API_BIND:-127.0.0.1}:8080:8080"]
+    # Deliberately not "service_healthy": the API must come up on its own and report not-ready until the DB is there.
+    depends_on: [postgres]
+    ulimits: { nofile: { soft: 65535, hard: 65535 } }
+    deploy: { resources: { limits: { cpus: "1.2", memory: 768M } } }
+    restart: unless-stopped
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=12d"]
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    deploy: { resources: { limits: { cpus: "0.3", memory: 256M } } }
+    restart: unless-stopped
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin-local}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/onsale.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["${GRAFANA_BIND:-127.0.0.1}:3000:3000"]
+    depends_on: [prometheus]
+    deploy: { resources: { limits: { cpus: "0.3", memory: 256M } } }
+    restart: unless-stopped
+    logging: *logging
+
+  dozzle:
+    image: amir20/dozzle:v8.13.0
+    environment:
+      DOZZLE_BASE: /logs
+      DOZZLE_NO_ANALYTICS: "true"
+      # Only this stack's containers are visible, never anything else on the host.
+      DOZZLE_FILTER: label=com.docker.compose.project=seatres
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    ports: ["${DOZZLE_BIND:-127.0.0.1}:8081:8080"]
+    deploy: { resources: { limits: { cpus: "0.2", memory: 128M } } }
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  promdata:
