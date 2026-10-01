@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.Json;
 using Npgsql;
 using Prometheus;
+using SeatRes.Api.Auth;
 using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
@@ -29,6 +30,9 @@ public static class ServiceRegistration
         services.AddSingleton<Migrator>();
         services.AddSingleton<MigrationState>();
         services.AddHostedService<MigrationHostedService>();
+        services.AddSingleton<ShowStore>();
+        services.AddSingleton<ShowCatalog>();
+        services.AddSeatResAuth();
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
         services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
@@ -49,12 +53,16 @@ public static class ServiceRegistration
         });
         app.UseMiddleware<ErrorHandlingMiddleware>();
         app.UseHttpMetrics(o => o.ReduceStatusCodeCardinality());
+        app.UseAuthentication();
+        app.UseAuthorization();
         return app;
     }
 
     public static WebApplication MapSeatResEndpoints(this WebApplication app)
     {
         app.MapHealthEndpoints();
+        app.MapAuthEndpoints();
+        app.MapShowEndpoints();
         app.MapMetrics("/metrics");
         return app;
     }
