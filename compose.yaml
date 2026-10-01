@@ -28,7 +28,7 @@ services:
     build: .
     image: ${API_IMAGE:-seatres-api:local}
     environment:
-      ConnectionStrings__Db: "Host=postgres;Database=seatres;Username=seatres;Password=${POSTGRES_PASSWORD:-seatres-local};Maximum Pool Size=30;Timeout=30;Command Timeout=15;Keepalive=30"
+      ConnectionStrings__Db: "Host=postgres;Database=seatres;Username=seatres;Password=${POSTGRES_PASSWORD:-seatres-local};Maximum Pool Size=30;Timeout=30;Command Timeout=15;Keepalive=30;Gss Encryption Mode=Disable;No Reset On Close=true;Max Auto Prepare=50;Auto Prepare Min Usages=2"
       Auth__JwtKey: ${JWT_KEY:-local-dev-signing-key-change-me-0123456789}
       Auth__AdminKey: ${ADMIN_KEY:-local-admin-key}
       Gateway__LatencyMillis: ${GATEWAY_LATENCY_MS:-30}

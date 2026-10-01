@@ -46,6 +46,20 @@ public class FastPathTests(PostgresFixture db)
     }
 
     [Fact]
+    public async Task Concurrent_retries_of_the_winning_key_all_replay_even_when_the_cache_knows_the_seat_is_taken()
+    {
+        var client = await Api.ReadyClientAsync();
+        var show = await client.CreateShowAsync(TestClients.Seats("A", 5));
+        var token = await client.TokenAsync(TestClients.NewUser());
+        var key = Guid.NewGuid().ToString("N");
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => Reserve.PostAsync(client, token, show, ["A1"], key)));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Equal(49, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+    }
+
+    [Fact]
     public async Task A_cancelled_seat_is_rebookable_immediately()
     {
         var client = await Api.ReadyClientAsync();

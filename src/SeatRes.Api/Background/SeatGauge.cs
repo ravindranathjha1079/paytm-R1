@@ -13,7 +13,8 @@ namespace SeatRes.Api.Background;
 public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
 {
     private static readonly string[] States = ["available", "held", "confirmed"];
-    private long _lastRefreshMs = long.MinValue;
+    public const long Never = -1;
+    private long _lastRefreshMs = Never;
     private int _registered;
 
     public void Register()
@@ -21,10 +22,12 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
         if (Interlocked.Exchange(ref _registered, 1) == 1) return;
         Metrics.DefaultRegistry.AddBeforeCollectCallback(async ct =>
         {
-            if (Environment.TickCount64 - Interlocked.Read(ref _lastRefreshMs) < 1000) return;
+            if (!IsStale(Interlocked.Read(ref _lastRefreshMs), Environment.TickCount64)) return;
             await RefreshAsync(ct);
         });
     }
+
+    internal static bool IsStale(long lastRefreshMs, long nowMs) => lastRefreshMs == Never || nowMs - lastRefreshMs >= 1000;
 
     public async Task RefreshAsync(CancellationToken ct)
     {

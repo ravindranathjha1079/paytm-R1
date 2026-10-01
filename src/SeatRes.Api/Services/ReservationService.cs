@@ -40,34 +40,53 @@ public sealed class ReservationService(
         var confirm = req.Confirm ?? false;
         var hash = RequestHash.ForReserve(show.Id, labels, confirm);
 
+        // Exactly one idempotency lookup per request: a key already used is replayed, never re-decided.
+        var fast = options.Value.FastPathEnabled;
+        var cached = fast ? FastDecline(show, seatNos!) : null;
         var existing = await IdempotencyStore.FindAsync(db.DataSource, userId, IdemScope.Reserve, key!, ct);
         if (existing is not null)
             return outcomes.Record("reserve", IdempotencyStore.Replay(existing, hash), userId, show.Id, null, labels);
-
-        var fast = options.Value.FastPathEnabled;
-        if (fast && FastDecline(show, seatNos!) is { } cached)
+        if (cached is not null)
             return outcomes.Record("reserve", cached, userId, show.Id, null, labels, layer: "taken_cache");
 
-        ReserveTxResult result;
-        using (var lease = fast ? await gate.AcquireAsync(show.Id, seatNos!, ct) : SeatGate.Lease.None)
+        var command = new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint);
+        var (result, gated) = await DecideAsync(command, fast, ct);
+        if (gated is not null)
         {
-            if (lease.Gated && FastDecline(show, seatNos!) is { } gated)
-                return outcomes.Record("reserve", gated, userId, show.Id, null, labels, layer: "gate");
-
-            result = await reserveTx.ExecuteAsync(new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint), ct);
-
-            if (fast && result.ReservationId is not null)
-                takenCache.MarkTaken(show.Id, result.ClaimedSeatNos, result.ClaimedUntil);
-            if (fast)
-                foreach (var t in result.TakenSeats)
-                    takenCache.MarkTaken(show.Id, [t.SeatNo], t.Until);
+            // The cache only learns a seat is taken after the winner commits. If that winner was this same key
+            // (a concurrent retry), its idempotency row is now visible: replay it instead of declining.
+            var committed = await IdempotencyStore.FindAsync(db.DataSource, userId, IdemScope.Reserve, key!, ct);
+            return committed is not null
+                ? outcomes.Record("reserve", IdempotencyStore.Replay(committed, hash), userId, show.Id, null, labels)
+                : outcomes.Record("reserve", gated, userId, show.Id, null, labels, layer: "gate");
         }
 
-        if (result.Response.StatusCode == 201 && !result.Response.Replayed)
+        if (result!.Response.StatusCode == 201 && !result.Response.Replayed)
             SeatResMetrics.HoldsCreated.WithLabels(show.Id.ToString()).Inc();
 
         var response = result.Pinned is null ? result.Response : await payments.RunAsync(result.Pinned);
         return outcomes.Record("reserve", response, userId, show.Id, result.ReservationId, labels);
+    }
+
+    /// <summary>
+    /// Holds the per-seat gate only around the DB decision. Returns a fast decline instead when, after waiting
+    /// at the gate, the cache shows the seat was taken by the request ahead — the gate is released before any
+    /// further database work so waiters drain without queueing on each other's round trips.
+    /// </summary>
+    private async Task<(ReserveTxResult? Result, ApiResult? GatedDecline)> DecideAsync(ReserveCommand cmd, bool fast,
+        CancellationToken ct)
+    {
+        using var lease = fast ? await gate.AcquireAsync(cmd.Show.Id, cmd.SeatNos, ct) : SeatGate.Lease.None;
+        if (lease.Gated && FastDecline(cmd.Show, cmd.SeatNos) is { } gated)
+            return (null, gated);
+
+        var result = await reserveTx.ExecuteAsync(cmd, ct);
+        if (fast && result.ReservationId is not null)
+            takenCache.MarkTaken(cmd.Show.Id, result.ClaimedSeatNos, result.ClaimedUntil);
+        if (fast)
+            foreach (var t in result.TakenSeats)
+                takenCache.MarkTaken(cmd.Show.Id, [t.SeatNo], t.Until);
+        return (result, null);
     }
 
     private ApiResult? FastDecline(ShowInfo show, int[] seatNos)
