@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http.Json;
+using Npgsql;
 using Prometheus;
+using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
 using SeatRes.Api.Observability;
@@ -16,6 +18,17 @@ public static class ServiceRegistration
         services.AddOptions<AuthOptions>().Bind(config.GetSection(AuthOptions.Section));
         services.AddOptions<GatewayOptions>().Bind(config.GetSection(GatewayOptions.Section));
         services.AddSingleton(TimeProvider.System);
+
+        services.AddSingleton(sp =>
+        {
+            var cs = sp.GetRequiredService<IConfiguration>().GetConnectionString("Db")
+                     ?? throw new InvalidOperationException("ConnectionStrings:Db is required");
+            return new NpgsqlDataSourceBuilder(cs).Build();
+        });
+        services.AddSingleton<Db>();
+        services.AddSingleton<Migrator>();
+        services.AddSingleton<MigrationState>();
+        services.AddHostedService<MigrationHostedService>();
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
         services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
