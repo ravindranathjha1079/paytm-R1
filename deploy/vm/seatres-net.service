@@ -1,0 +1,13 @@
+[Unit]
+Description=seatres: secondary IP and 80/443 redirect to the seatres Caddy
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/seatres-net up
+ExecStop=/usr/local/sbin/seatres-net down
+
+[Install]
+WantedBy=multi-user.target

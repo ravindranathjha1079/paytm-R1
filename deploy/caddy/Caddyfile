@@ -1,0 +1,45 @@
+# seatres edge. Runs with host networking on 9080/9443; seatres-net redirects the seatres public IP's
+# 80/443 here. senti's Caddy (on the primary IP) is never touched.
+{
+	http_port 9080
+	https_port 9443
+	admin localhost:2099
+	# Externally this is still :80/:443, so build redirects ourselves rather than to :9443.
+	auto_https disable_redirects
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
+http://{$SEATRES_FQDN} {
+	redir https://{host}{uri} permanent
+}
+
+{$SEATRES_FQDN} {
+	encode zstd gzip
+
+	# Live logs (read-only Dozzle, this stack's containers only).
+	handle /logs* {
+		basic_auth {
+			{$LOGS_USER} {$LOGS_HASH}
+		}
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	# Dashboards (anonymous read-only Grafana).
+	handle /grafana* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080 {
+			transport http {
+				keepalive 2m
+				keepalive_idle_conns 1024
+			}
+		}
+	}
+}

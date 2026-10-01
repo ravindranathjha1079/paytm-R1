@@ -1,0 +1,10 @@
+[Unit]
+Description=seatres: one-shot teardown at @EXPIRES_AT@
+
+[Timer]
+OnCalendar=@EXPIRES_AT@
+Persistent=true
+Unit=seatres-teardown.service
+
+[Install]
+WantedBy=timers.target

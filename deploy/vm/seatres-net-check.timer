@@ -1,0 +1,10 @@
+[Unit]
+Description=seatres: re-assert the redirect rules every 5 minutes (e.g. after a Docker restart)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=seatres-net-check.service
+
+[Install]
+WantedBy=timers.target

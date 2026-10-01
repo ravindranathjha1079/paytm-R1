@@ -1,0 +1,6 @@
+[Unit]
+Description=seatres: re-assert the redirect rules
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/seatres-net up

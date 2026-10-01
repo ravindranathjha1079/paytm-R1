@@ -1,0 +1,6 @@
+[Unit]
+Description=seatres: remove the deployment (scheduled 10 days after first install)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/seatres-teardown
