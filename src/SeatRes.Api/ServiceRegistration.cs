@@ -6,6 +6,7 @@ using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
 using SeatRes.Api.Observability;
+using SeatRes.Api.Services;
 using Serilog;
 using Serilog.Events;
 
@@ -32,6 +33,10 @@ public static class ServiceRegistration
         services.AddHostedService<MigrationHostedService>();
         services.AddSingleton<ShowStore>();
         services.AddSingleton<ShowCatalog>();
+        services.AddSingleton<ReserveTx>();
+        services.AddSingleton<ReservationStore>();
+        services.AddSingleton<OutcomeRecorder>();
+        services.AddSingleton<ReservationService>();
         services.AddSeatResAuth();
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
@@ -63,6 +68,7 @@ public static class ServiceRegistration
         app.MapHealthEndpoints();
         app.MapAuthEndpoints();
         app.MapShowEndpoints();
+        app.MapReservationEndpoints();
         app.MapMetrics("/metrics");
         return app;
     }
