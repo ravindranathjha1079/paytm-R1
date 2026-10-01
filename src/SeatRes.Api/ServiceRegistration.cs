@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Npgsql;
 using Prometheus;
 using SeatRes.Api.Auth;
+using SeatRes.Api.Background;
 using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
@@ -42,6 +43,10 @@ public static class ServiceRegistration
         services.AddSingleton<CancelTx>();
         services.AddSingleton<PaymentService>();
         services.AddSingleton<IPaymentGateway, SimulatedGateway>();
+        services.AddSingleton<PaymentRecovery>();
+        services.AddSingleton<Reconciler>();
+        services.AddSingleton<SeatGauge>();
+        services.AddHostedService<PeriodicWorker>();
         services.AddSeatResAuth();
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
@@ -53,6 +58,7 @@ public static class ServiceRegistration
 
     public static WebApplication UseSeatResPipeline(this WebApplication app)
     {
+        app.Services.GetRequiredService<SeatGauge>().Register();
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseSerilogRequestLogging(o =>
         {
