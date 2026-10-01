@@ -267,13 +267,14 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
             new { attemptId, status, now, refundReason }, tx);
 
     /// <summary>Frees only seats this reservation still owns — never a seat that now belongs to someone else.</summary>
-    internal static Task<int> ReleaseOwnedSeatsAsync(NpgsqlConnection c, NpgsqlTransaction tx, ReservationRow res) =>
-        c.ExecuteAsync(
+    internal static async Task<int[]> ReleaseOwnedSeatsAsync(NpgsqlConnection c, NpgsqlTransaction tx, ReservationRow res) =>
+        (await c.QueryAsync<int>(
             """
             UPDATE seats SET status = 'available', reservation_id = NULL, holder_user_id = NULL, hold_expires_at = NULL, pay_deadline = NULL
             WHERE show_id = @showId AND reservation_id = @id
+            RETURNING seat_no
             """,
-            new { showId = res.ShowId, id = res.Id }, tx);
+            new { showId = res.ShowId, id = res.Id }, tx)).ToArray();
 
     private static ReservationDto ConfirmedDto(ReservationRow res, DateTime now) =>
         ReservationStore.ToDto(res, now) with { Status = ReservationStatus.Confirmed, ExpiresAt = null, PayDeadline = null };

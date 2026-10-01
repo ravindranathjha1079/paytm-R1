@@ -8,6 +8,7 @@ namespace SeatRes.Api.Services;
 
 public sealed class PaymentService(
     PaymentTx paymentTx,
+    CancelTx cancelTx,
     IPaymentGateway gateway,
     OutcomeRecorder outcomes,
     IOptions<SeatResOptions> options,
@@ -22,6 +23,15 @@ public sealed class PaymentService(
         var pin = await paymentTx.PinAsync(reservationId, userId, key!, RequestHash.ForConfirm(reservationId), hint, ct);
         var result = pin.Pinned is null ? pin.Response! : await RunAsync(pin.Pinned);
         return outcomes.Record("confirm", result, userId, pin.ShowId, reservationId, null);
+    }
+
+    public async Task<ApiResult> CancelAsync(Guid reservationId, string userId, CancellationToken ct)
+    {
+        var result = await cancelTx.ExecuteAsync(reservationId, userId, ct);
+        var response = result.Response;
+        if (result.RefundAttemptId is { } attempt && !await RefundAsync(attempt))
+            response = CancelTx.RefundProcessing();
+        return outcomes.Record("cancel", response, userId, result.ShowId, reservationId, null);
     }
 
     /// <summary>

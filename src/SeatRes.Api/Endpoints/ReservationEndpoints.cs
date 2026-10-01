@@ -21,6 +21,10 @@ public static class ReservationEndpoints
                     ctx.Request.Headers[GatewayHintHeader].FirstOrDefault(), ct))
             .RequireAuthorization(AuthSetup.UserPolicy);
 
+        app.MapPost("/reservations/{id:guid}/cancel", (Guid id, HttpContext ctx, PaymentService svc, CancellationToken ct) =>
+                svc.CancelAsync(id, ctx.User.UserId(), ct))
+            .RequireAuthorization(AuthSetup.UserPolicy);
+
         app.MapGet("/reservations/{id:guid}", async (Guid id, HttpContext ctx, ReservationStore store, TimeProvider time, CancellationToken ct) =>
             {
                 var r = await store.GetAsync(id, ct);

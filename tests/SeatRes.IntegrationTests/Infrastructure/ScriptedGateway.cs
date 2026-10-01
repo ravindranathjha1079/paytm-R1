@@ -34,7 +34,7 @@ public sealed class ScriptedGateway : IPaymentGateway
     }
 
     /// <summary>Completes when a Block-scripted charge is waiting inside the gateway.</summary>
-    public Task Entered => _entered.Task;
+    public Task Entered => _entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
     public void Release(GatewayStatus outcome) => _release.TrySetResult(outcome);
 

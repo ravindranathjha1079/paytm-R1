@@ -39,6 +39,7 @@ public static class ServiceRegistration
         services.AddSingleton<OutcomeRecorder>();
         services.AddSingleton<ReservationService>();
         services.AddSingleton<PaymentTx>();
+        services.AddSingleton<CancelTx>();
         services.AddSingleton<PaymentService>();
         services.AddSingleton<IPaymentGateway, SimulatedGateway>();
         services.AddSeatResAuth();

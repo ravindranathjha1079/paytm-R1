@@ -14,6 +14,7 @@ public sealed class ReservationService(
     ShowCatalog catalog,
     ReserveTx reserveTx,
     Db db,
+    PaymentService payments,
     OutcomeRecorder outcomes,
     IOptions<SeatResOptions> options,
     ILogger<ReservationService> log)
@@ -40,11 +41,12 @@ public sealed class ReservationService(
         if (existing is not null)
             return outcomes.Record("reserve", IdempotencyStore.Replay(existing, hash), userId, show.Id, null, labels);
 
-        var result = await reserveTx.ExecuteAsync(new ReserveCommand(show, userId, key!, hash, seatNos!, confirm), ct);
+        var result = await reserveTx.ExecuteAsync(new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint), ct);
         if (result.Response.StatusCode == 201 && !result.Response.Replayed)
             SeatResMetrics.HoldsCreated.WithLabels(show.Id.ToString()).Inc();
 
-        return outcomes.Record("reserve", result.Response, userId, show.Id, result.ReservationId, labels);
+        var response = result.Pinned is null ? result.Response : await payments.RunAsync(result.Pinned);
+        return outcomes.Record("reserve", response, userId, show.Id, result.ReservationId, labels);
     }
 
     private (int[]? SeatNos, ApiResult? Error) ResolveSeats(ShowInfo show, string[]? seats)

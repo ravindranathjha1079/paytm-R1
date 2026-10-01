@@ -6,7 +6,8 @@ using SeatRes.Api.Observability;
 
 namespace SeatRes.Api.Data;
 
-public sealed record ReserveCommand(ShowInfo Show, string UserId, string IdemKey, byte[] RequestHash, int[] SeatNos, bool Confirm);
+public sealed record ReserveCommand(ShowInfo Show, string UserId, string IdemKey, byte[] RequestHash, int[] SeatNos, bool Confirm,
+    string? GatewayHint = null);
 
 public sealed record TakenSeat(int SeatNo, DateTime? Until);
 
@@ -83,7 +84,8 @@ public sealed class ReserveTx(Db db, TimeProvider time, IOptions<SeatResOptions>
         var previousOwners = rows.Where(r => r.ReservationId is not null).Select(r => r.ReservationId!.Value)
             .Distinct().Order().ToArray();
         var reservationId = Guid.CreateVersion7();
-        var holdUntil = now + opt.Hold;
+        // Hold-and-pay never has a takeable hold: the seats go straight from claim to a payment pin.
+        DateTime? holdUntil = cmd.Confirm ? null : now + opt.Hold;
         var amount = show.PricePaise * cmd.SeatNos.Length;
         var labels = cmd.SeatNos.Select(show.LabelOf).ToArray();
 
@@ -118,7 +120,18 @@ public sealed class ReserveTx(Db db, TimeProvider time, IOptions<SeatResOptions>
 
         var dto = new ReservationDto(reservationId, show.Id, cmd.UserId, labels, amount, ReservationStatus.Held,
             holdUntil, null, now);
-        return new ReserveTxResult(ApiResult.Ok(dto, 201), reservationId, cmd.SeatNos, holdUntil, [], null);
+        if (!cmd.Confirm)
+            return new ReserveTxResult(ApiResult.Ok(dto, 201), reservationId, cmd.SeatNos, holdUntil, [], null);
+
+        var reservation = new ReservationRow
+        {
+            Id = reservationId, ShowId = show.Id, UserId = cmd.UserId, SeatNos = cmd.SeatNos, Labels = labels,
+            AmountPaise = amount, Status = ReservationStatus.Held,
+        };
+        var deadline = SeatRules.PayDeadline("new", null, null, now, opt.PayGrace);
+        var pinned = await PaymentTx.CreatePinAsync(c, tx, reservation, cmd.UserId, IdemScope.Reserve, cmd.IdemKey, deadline, now, cmd.GatewayHint);
+        return new ReserveTxResult(ApiResult.Ok(dto with { Status = ReservationStatus.PaymentPending, PayDeadline = deadline }, 202),
+            reservationId, cmd.SeatNos, deadline, [], pinned);
     }
 
     private static ReserveTxResult Done(ApiResult response) => new(response, null, [], null, [], null);
