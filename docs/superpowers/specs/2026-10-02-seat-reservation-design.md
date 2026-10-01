@@ -156,7 +156,11 @@ Every transaction that takes more than one lock takes them in this order, and on
 1. `user_show_locks` row of the acting user (exactly one per transaction),
 2. `seats` rows `ORDER BY seat_no` (`SELECT … FOR UPDATE`),
 3. `reservations` rows `ORDER BY id`,
-4. `idempotency_keys` / `payment_attempts` / `payments` rows (inserted or updated last).
+4. `payment_attempts` / `payments` rows.
+
+Exception, safe by construction: reserve and confirm insert their `idempotency_keys` row *first*.
+That row is scoped to `(user_id, scope, key)`, so the only transaction that can wait on it is the
+same user's retry of the same key, and that waiter holds no other locks yet — no cycle is possible.
 
 `seat_no` is an integer assigned in request order at show creation; label text is never used for
 ordering (collation-dependent, "A10" < "A2"). Backstop: SQLSTATE `40P01` (deadlock) / `40001`
@@ -175,7 +179,7 @@ domain decline (409 `per_user_limit`), not a validation error.
 Processing pipeline:
 
 1. **Idempotency lookup** (before any fast path, so a retry of a successful request is replayed and
-   not mis-declined): in-memory LRU of completed keys → else PK read of `idempotency_keys`.
+   not mis-declined): primary-key read of `idempotency_keys`.
    Found + completed → same hash: replay stored response (original 201 is replayed as **200** with
    header `Idempotent-Replayed: true`; stored declines replay as the same 409); different hash →
    409 `idempotency_mismatch`. Found + in progress → wait on it (falls into step 4's insert, which
@@ -403,12 +407,13 @@ saturated > 30 s; 429 rate sustained (capacity planning, not a page).
 
 - **Image**: multi-stage Dockerfile (SDK build → `aspnet` runtime, non-root). Built by GitHub
   Actions, pushed to GHCR.
-- **Compose** (`deploy/docker-compose.yml`, same file for local `make up`): `api`, `postgres`
+- **Compose** (`compose.yaml` at the repo root, same file for local `docker compose up`;
+  `deploy/compose.prod.yaml` overlays the GHCR image and production secrets): `api`, `postgres`
   (bound to 127.0.0.1, named volume), `prometheus`, `grafana`, `dozzle`; CPU/memory limits on
   each so senti keeps headroom; `api` healthcheck on `/health/ready`; restart `unless-stopped`.
 - **Azure network**: new Standard public IP `seatres-paytm-ip` (DNS label `seatres-paytm`) as a
-  secondary IP configuration on `senti-vmVMNic` with a static secondary private IP; netplan
-  drop-in on the VM for that address. NSG already allows 80/443.
+  secondary IP configuration on `senti-vmVMNic` with static private IP `10.0.0.10`; on the VM a
+  one-shot systemd unit adds `10.0.0.10/24` to `eth0` (no `netplan apply` on a shared VM). NSG already allows 80/443.
 - **Caddy**: one site block for `seatres-paytm.centralindia.cloudapp.azure.com` added to senti's
   Caddy (exact integration decided after inspecting the VM): `/` → api, `/grafana*` → grafana,
   `/logs*` → dozzle (basic auth). Automatic TLS.
@@ -418,8 +423,8 @@ saturated > 30 s; 429 rate sustained (capacity planning, not a page).
 ## 10. Teardown (T + 10 days)
 
 - **VM-local**: `setup` installs a one-shot systemd timer for T+10d running
-  `deploy/teardown/teardown.sh`: `docker compose down -v`, remove our Caddy block + reload, remove
-  the netplan drop-in. Touches only files/containers recorded in a manifest written at setup.
+  `deploy/vm/teardown.sh`: `docker compose down -v`, remove our Caddy block + reload, remove the
+  secondary-IP unit and address. Touches only files/containers recorded in a manifest written at setup.
 - **Azure**: scheduled GitHub Actions workflow (OIDC, role scoped to the NIC and our public IP)
   removes the secondary IP configuration and deletes `seatres-paytm-ip` on/after the expiry date.
 - Nothing belonging to senti is modified or removed.
