@@ -1,8 +1,12 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Prometheus;
 using SeatRes.Api.Auth;
 using SeatRes.Api.Background;
+using SeatRes.Api.Concurrency;
 using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Endpoints;
@@ -16,6 +20,8 @@ namespace SeatRes.Api;
 
 public static class ServiceRegistration
 {
+    public const string WritePolicy = "writes";
+
     public static IServiceCollection AddSeatRes(this IServiceCollection services, IConfiguration config)
     {
         services.AddOptions<SeatResOptions>().Bind(config.GetSection(SeatResOptions.Section));
@@ -43,11 +49,31 @@ public static class ServiceRegistration
         services.AddSingleton<CancelTx>();
         services.AddSingleton<PaymentService>();
         services.AddSingleton<IPaymentGateway, SimulatedGateway>();
+        services.AddSingleton<TakenSeatCache>();
+        services.AddSingleton<SeatGate>();
         services.AddSingleton<PaymentRecovery>();
         services.AddSingleton<Reconciler>();
         services.AddSingleton<SeatGauge>();
         services.AddHostedService<PeriodicWorker>();
         services.AddSeatResAuth();
+
+        // Admission control for writes: bounded in-flight + bounded queue; beyond that a fast 429, never a 5xx.
+        services.AddRateLimiter(_ => { });
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<SeatResOptions>>((o, seatres) =>
+        {
+            o.AddConcurrencyLimiter(WritePolicy, c =>
+            {
+                c.PermitLimit = seatres.Value.AdmissionPermits;
+                c.QueueLimit = seatres.Value.AdmissionQueue;
+                c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            });
+            o.OnRejected = async (ctx, _) =>
+            {
+                ctx.HttpContext.Response.Headers.RetryAfter = "1";
+                SeatResMetrics.Declined.WithLabels(ErrorCodes.Overloaded).Inc();
+                await ApiResult.Fail(429, ErrorCodes.Overloaded, "server is at capacity, retry shortly").WriteAsync(ctx.HttpContext);
+            };
+        });
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
         services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
@@ -71,6 +97,7 @@ public static class ServiceRegistration
         app.UseHttpMetrics(o => o.ReduceStatusCodeCardinality());
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseRateLimiter();
         return app;
     }
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using SeatRes.Api.Concurrency;
 using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Observability;
@@ -9,6 +10,7 @@ namespace SeatRes.Api.Services;
 public sealed class PaymentService(
     PaymentTx paymentTx,
     CancelTx cancelTx,
+    TakenSeatCache takenCache,
     IPaymentGateway gateway,
     OutcomeRecorder outcomes,
     IOptions<SeatResOptions> options,
@@ -28,6 +30,7 @@ public sealed class PaymentService(
     public async Task<ApiResult> CancelAsync(Guid reservationId, string userId, CancellationToken ct)
     {
         var result = await cancelTx.ExecuteAsync(reservationId, userId, ct);
+        if (result.ShowId is { } showId) takenCache.Invalidate(showId, result.ReleasedSeatNos);
         var response = result.Response;
         if (result.RefundAttemptId is { } attempt && !await RefundAsync(attempt))
             response = CancelTx.RefundProcessing();

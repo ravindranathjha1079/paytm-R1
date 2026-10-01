@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using SeatRes.Api.Concurrency;
 using SeatRes.Api.Data;
 using SeatRes.Api.Domain;
 using SeatRes.Api.Observability;
@@ -6,15 +7,17 @@ using SeatRes.Api.Observability;
 namespace SeatRes.Api.Services;
 
 /// <summary>
-/// Reserve pipeline: validate → idempotency lookup → [fast path] → atomic DB decision → [payment].
-/// The idempotency lookup runs before any in-memory shortcut so a retry of a winning request is
-/// replayed rather than mis-declined as "seat taken".
+/// Reserve pipeline: validate → idempotency lookup → [taken-seat cache → per-seat gate] → atomic DB decision
+/// → [payment]. The idempotency lookup runs before any in-memory shortcut so a retry of a winning request is
+/// replayed rather than mis-declined as "seat taken". The in-memory layers only decline or delay.
 /// </summary>
 public sealed class ReservationService(
     ShowCatalog catalog,
     ReserveTx reserveTx,
     Db db,
     PaymentService payments,
+    TakenSeatCache takenCache,
+    SeatGate gate,
     OutcomeRecorder outcomes,
     IOptions<SeatResOptions> options,
     ILogger<ReservationService> log)
@@ -41,12 +44,39 @@ public sealed class ReservationService(
         if (existing is not null)
             return outcomes.Record("reserve", IdempotencyStore.Replay(existing, hash), userId, show.Id, null, labels);
 
-        var result = await reserveTx.ExecuteAsync(new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint), ct);
+        var fast = options.Value.FastPathEnabled;
+        if (fast && FastDecline(show, seatNos!) is { } cached)
+            return outcomes.Record("reserve", cached, userId, show.Id, null, labels, layer: "taken_cache");
+
+        ReserveTxResult result;
+        using (var lease = fast ? await gate.AcquireAsync(show.Id, seatNos!, ct) : SeatGate.Lease.None)
+        {
+            if (lease.Gated && FastDecline(show, seatNos!) is { } gated)
+                return outcomes.Record("reserve", gated, userId, show.Id, null, labels, layer: "gate");
+
+            result = await reserveTx.ExecuteAsync(new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint), ct);
+
+            if (fast && result.ReservationId is not null)
+                takenCache.MarkTaken(show.Id, result.ClaimedSeatNos, result.ClaimedUntil);
+            if (fast)
+                foreach (var t in result.TakenSeats)
+                    takenCache.MarkTaken(show.Id, [t.SeatNo], t.Until);
+        }
+
         if (result.Response.StatusCode == 201 && !result.Response.Replayed)
             SeatResMetrics.HoldsCreated.WithLabels(show.Id.ToString()).Inc();
 
         var response = result.Pinned is null ? result.Response : await payments.RunAsync(result.Pinned);
         return outcomes.Record("reserve", response, userId, show.Id, result.ReservationId, labels);
+    }
+
+    private ApiResult? FastDecline(ShowInfo show, int[] seatNos)
+    {
+        var taken = takenCache.FindTaken(show.Id, seatNos);
+        return taken.Length == 0
+            ? null
+            : ApiResult.Fail(409, ErrorCodes.SeatTaken, "one or more requested seats are already taken",
+                new Dictionary<string, object?> { ["taken"] = taken.Select(show.LabelOf).ToArray() });
     }
 
     private (int[]? SeatNos, ApiResult? Error) ResolveSeats(ShowInfo show, string[]? seats)
