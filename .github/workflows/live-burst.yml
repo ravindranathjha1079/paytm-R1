@@ -10,7 +10,7 @@ on:
         description: Service URL
         default: https://seatres-paytm.centralindia.cloudapp.azure.com
       shards:
-        description: Parallel runners (1-6)
+        description: Parallel runners (1-12)
         default: "1"
       args:
         description: Extra burst.py arguments (per shard)
@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - name: Skip shards beyond the requested count
         id: gate

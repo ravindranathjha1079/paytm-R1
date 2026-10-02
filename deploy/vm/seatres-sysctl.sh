@@ -5,8 +5,8 @@
 # set: if another app changed it meanwhile, it is left alone.
 set -euo pipefail
 STATE=/var/lib/seatres/sysctl.prev
-KEYS="net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.core.netdev_max_backlog"
-WANT=8192
+KEYS="net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.core.netdev_max_backlog net.netfilter.nf_conntrack_max"
+want() { [ "$1" = net.netfilter.nf_conntrack_max ] && echo 262144 || echo 8192; }
 case "${1:-raise}" in
   raise)
     mkdir -p "$(dirname "$STATE")"
@@ -15,12 +15,12 @@ case "${1:-raise}" in
     fi
     for k in $KEYS; do
       cur=$(sysctl -n "$k")
-      if [ "$cur" -lt "$WANT" ]; then sysctl -q -w "$k=$WANT"; fi
+      if [ "$cur" -lt "$(want "$k")" ]; then sysctl -q -w "$k=$(want "$k")"; fi
     done ;;
   restore)
     if [ -f "$STATE" ]; then
       while IFS== read -r k v; do
-        if [ "$(sysctl -n "$k")" = "$WANT" ] && [ "$v" != "$WANT" ]; then sysctl -q -w "$k=$v"; fi
+        if [ "$(sysctl -n "$k")" = "$(want "$k")" ] && [ "$v" != "$(want "$k")" ]; then sysctl -q -w "$k=$v"; fi
       done < "$STATE"
       rm -f "$STATE"
     fi ;;
