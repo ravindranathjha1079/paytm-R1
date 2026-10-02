@@ -29,10 +29,9 @@ jobs:
           if [ "${{ inputs.force }}" = "true" ] || [[ ! "$today" < "${{ vars.EXPIRES_ON }}" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.due.outputs.run == 'true'
-        uses: actions/checkout@v4
-      - if: steps.due.outputs.run == 'true'
-        uses: azure/login@v2
+      - uses: actions/checkout@v4
+      # Log in every day, so a broken credential shows up long before the teardown date.
+      - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -40,3 +39,6 @@ jobs:
       - if: steps.due.outputs.run == 'true'
         name: Remove the seatres public IP and NIC ip-config
         run: bash deploy/azure/network-down.sh
+      - if: steps.due.outputs.run != 'true'
+        name: Not due yet — confirm access to the resources it will remove
+        run: az network public-ip show -g senti-rg -n seatres-paytm-ip --query "{ip:ipAddress,fqdn:dnsSettings.fqdn,tags:tags}" -o json

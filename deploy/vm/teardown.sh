@@ -9,6 +9,7 @@ if [ -f "$DIR/compose.yaml" ]; then
   run docker compose --project-directory "$DIR" -f "$DIR/compose.yaml" -f "$DIR/deploy/compose.prod.yaml" \
     --env-file "$DIR/.env" -p seatres down -v --rmi local --remove-orphans
 fi
+run docker image rm seatres-api:prod   # our own image only; shared base images (postgres, caddy) stay
 run systemctl disable --now seatres-net-check.timer seatres-net.service
 run /usr/local/sbin/seatres-net down
 run rm -f /etc/systemd/system/seatres-net.service /etc/systemd/system/seatres-net-check.service \
