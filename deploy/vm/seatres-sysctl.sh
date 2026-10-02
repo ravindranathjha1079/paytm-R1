@@ -6,7 +6,14 @@
 set -euo pipefail
 STATE=/var/lib/seatres/sysctl.prev
 KEYS="net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.core.netdev_max_backlog net.netfilter.nf_conntrack_max"
-want() { [ "$1" = net.netfilter.nf_conntrack_max ] && echo 262144 || echo 8192; }
+# Sized so a whole 20k-connection wave fits in the accept queue (8192 overflowed ~68k times in testing).
+want() {
+  case "$1" in
+    net.netfilter.nf_conntrack_max) echo 262144 ;;
+    net.core.netdev_max_backlog) echo 16384 ;;
+    *) echo 65535 ;;
+  esac
+}
 case "${1:-raise}" in
   raise)
     mkdir -p "$(dirname "$STATE")"

@@ -8,7 +8,8 @@
 	auto_https disable_redirects
 	servers {
 		timeouts {
-			read_header 10s
+			# Generous: under a 20k-connection wave a freshly accepted connection may wait for CPU.
+			read_header 60s
 			idle 2m
 		}
 	}

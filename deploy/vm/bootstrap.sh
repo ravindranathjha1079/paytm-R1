@@ -61,6 +61,10 @@ docker compose -f compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d
 docker image prune -f --filter "label=com.docker.compose.project=seatres" >/dev/null || true
 # Pick up config changes without dropping connections: Caddy reloads gracefully, Prometheus on SIGHUP.
 docker exec seatres-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force >/dev/null 2>&1 || true
+# The listen backlog is fixed when Caddy opens its socket; restart it once if it predates the larger somaxconn.
+if [ "$(ss -Hltn '( sport = :9443 )' | awk '{print $3}' | head -1)" != "$(sysctl -n net.core.somaxconn)" ]; then
+  docker restart seatres-caddy-1 >/dev/null
+fi
 docker kill -s HUP seatres-prometheus-1 >/dev/null 2>&1 || true
 
 for _ in $(seq 1 60); do
