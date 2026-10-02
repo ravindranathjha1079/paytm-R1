@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # seatres-net up|down|status
 # Routes the seatres public IP to our own Caddy without touching anything else on this VM:
-#   - adds the secondary private IP (10.0.0.10) to eth0, and
+#   - adds the secondary private IP (10.0.0.10/32: no subnet route, so other apps' traffic is unaffected) to eth0, and
 #   - redirects TCP 80/443 *destined to that IP only* to our Caddy on 9080/9443.
 # senti's Caddy keeps owning 80/443 on the primary IP. Idempotent; "up" also restores rule order.
 set -euo pipefail
@@ -21,9 +21,14 @@ remove_rules() {
   done
 }
 
+in_order() {
+  # Our two rules must be the first two PREROUTING rules, ahead of Docker's DNAT jump.
+  [ "$(iptables -t nat -S PREROUTING | sed -n '2,3p' | grep -c 'comment seatres')" = "2" ]
+}
+
 up() {
-  ip -4 addr show dev "$DEV" | grep -q "inet $IP/" || ip addr add "$IP/24" dev "$DEV"
-  # Re-insert at the top every time so Docker's own DNAT rules can never shadow ours.
+  ip -4 addr show dev "$DEV" | grep -q "inet $IP/" || ip addr add "$IP/32" dev "$DEV"
+  in_order && return 0   # nothing to repair: never churn rules that are already right
   remove_rules
   for pair in "${PAIRS[@]}"; do
     set -- $pair
@@ -34,7 +39,9 @@ up() {
 
 down() {
   remove_rules
-  if ip -4 addr show dev "$DEV" | grep -q "inet $IP/"; then ip addr del "$IP/24" dev "$DEV"; fi
+  for prefix in 32 24; do
+    if ip -4 addr show dev "$DEV" | grep -q "inet $IP/$prefix"; then ip addr del "$IP/$prefix" dev "$DEV"; fi
+  done
 }
 
 case "${1:-up}" in

@@ -25,6 +25,9 @@ jobs:
         id: due
         run: |
           today=$(date -u +%Y-%m-%d)
+          if ! [[ "${{ vars.EXPIRES_ON }}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "EXPIRES_ON is missing or malformed; refusing to decide" >&2; exit 1
+          fi
           echo "today=$today expires_on=${{ vars.EXPIRES_ON }}"
           if [ "${{ inputs.force }}" = "true" ] || [[ ! "$today" < "${{ vars.EXPIRES_ON }}" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"

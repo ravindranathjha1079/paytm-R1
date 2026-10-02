@@ -38,8 +38,9 @@ install -m 0755 deploy/vm/seatres-net.sh /usr/local/sbin/seatres-net
 install -m 0755 deploy/vm/teardown.sh /usr/local/sbin/seatres-teardown
 install -m 0644 deploy/vm/seatres-net.service deploy/vm/seatres-net-check.service deploy/vm/seatres-net-check.timer \
   deploy/vm/seatres-teardown.service /etc/systemd/system/
-install -m 0644 deploy/vm/99-seatres.conf /etc/sysctl.d/99-seatres.conf
-sysctl -q --load /etc/sysctl.d/99-seatres.conf
+install -m 0755 deploy/vm/seatres-sysctl.sh /usr/local/sbin/seatres-sysctl
+rm -f /etc/sysctl.d/99-seatres.conf   # earlier versions wrote a fixed file; values are now raise-only at runtime
+/usr/local/sbin/seatres-sysctl raise
 
 # One-shot teardown, fixed at the first install (never pushed back by re-deploys).
 if [ ! -f /etc/systemd/system/seatres-teardown.timer ]; then
@@ -62,7 +63,7 @@ done
 cat > .manifest <<MANIFEST
 dir=$DIR
 compose_project=seatres
-files=/usr/local/sbin/seatres-net /usr/local/sbin/seatres-teardown /etc/sysctl.d/99-seatres.conf
+files=/usr/local/sbin/seatres-net /usr/local/sbin/seatres-teardown /usr/local/sbin/seatres-sysctl /var/lib/seatres
 units=seatres-net.service seatres-net-check.service seatres-net-check.timer seatres-teardown.service seatres-teardown.timer
 teardown_at=$(systemctl show seatres-teardown.timer -p TimersCalendar --value)
 MANIFEST
