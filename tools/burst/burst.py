@@ -474,8 +474,8 @@ async def main(args) -> int:
             print(f"  {k:<34} {v:>8}")
         print(f"  {'5xx':<34} {everything.server_errors:>8}")
         if everything.errors:
-            print("
-client-side transport errors (never reached a response; often the load generator itself)")
+            print()
+            print("client-side transport errors (never reached a response; often the load generator itself)")
             for msg, n in everything.errors.most_common(3):
                 print(f"  {n:>8}  {msg or '(timeout)'}")
         if lat:
