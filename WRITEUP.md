@@ -61,6 +61,13 @@ Postgres still picks the single winner. The whole decision path is tested with t
   key lookup, then hit the cache ("seat taken") and was wrongly declined. Fix: a fast decline consults the
   now-committed key row first. Test: `Concurrent_retries_of_the_winning_key_all_replay_…`.
 - Confirm (payment) has its own scope; one key = one payment attempt.
+- **Holder-aware fast path.** The taken-seat cache records who holds each seat. A winning key for a seat can
+  only belong to its holder, so a decline for anyone else is answered from memory with no database read.
+  That cut the per-request database work of a storm to almost nothing. Only the holder's own requests, or
+  seats whose holder is unknown, still check the key first.
+  Trade-off: a user who retries a *winning* key more than 5 minutes later, after their expired hold went to
+  someone else, gets 409 `seat_taken` instead of a replay of the stale reservation. No extra reservation can
+  ever be created by any path.
 
 ## 3. Holds, expiry and payment
 
@@ -111,8 +118,9 @@ detectable and compensated.
     API container directly, with a bounded upstream pool, so excess requests queue at the edge, not in
     the kernel.
   - Measured: 6 runners at once, about 10,500 concurrent TLS connections, 192,681 requests, **0 × 5xx and
-    0 dropped**. Throughput is CPU-bound at about 900–1,000 req/s on this shared burstable VM; latency
-    under that much concurrency is queueing, not failure.
+    0 dropped**. Throughput is CPU-bound on this shared burstable VM: about 1,230 req/s combined (up from
+    about 920 after the holder-aware cache below). Latency under that much concurrency is queueing, not
+    failure.
 - **Restarts are invisible.** Kestrel drains in-flight requests on SIGTERM. The edge re-dials while the
   process is down and retries cut-off requests, but only on routes that are idempotent by design.
   Restarting the API 30 s into a live 42k-request burst gave 0 × 5xx and 0 dropped connections. In an
@@ -145,7 +153,7 @@ Sustained 429s are a capacity-planning signal, not a page.
 |---|---|---|
 | Integration suite (real Postgres, in-memory layer off) | 150 tests | all pass; includes 500-on-one-seat, overlapping groups ×20, limit storms, payment races |
 | Live, GitHub runner, `--workers 4 --concurrency 200 --stampede 40000 --overload 30000` | 72,600+ | 0 × 5xx, 0 transport errors; hot seat 1 × 201 + 499 × 409; reconciliation, ledger and `/metrics` all match; p50 650 ms, p99 1.45 s (client is ~200 ms RTT away) |
-| Live, 6 runners at once (~10,500 concurrent TLS connections) | 192,681 | 0 × 5xx, 0 dropped; every shard's hot seat had exactly one winner |
+| Live, 6 runners at once (~10,500 concurrent TLS connections) | 192,559 | 0 × 5xx, 0 dropped; every shard's hot seat had exactly one winner |
 | Live, API container restarted mid-burst | 41,987 | 0 × 5xx, 0 dropped; invariants exact |
 
 Single-source bursts top out around 700–900 req/s because of the client side (one source IP's NAT ports

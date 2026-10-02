@@ -21,7 +21,7 @@ The deployment lives for 10 days (until 2026-10-11 22:00 UTC) and then removes i
 
 | Run | Requests | Result |
 |---|---|---|
-| 6 GitHub runners at once, about 10,500 concurrent TLS connections | 192,681 | **0 × 5xx, 0 dropped**; each 500-user hot seat → exactly one 201; all invariants reconcile |
+| 6 GitHub runners at once, about 10,500 concurrent TLS connections | 192,559 | **0 × 5xx, 0 dropped**; each 500-user hot seat → exactly one 201; all invariants reconcile |
 | API container restarted 30 s into a 42k-request burst | 41,987 | **0 × 5xx, 0 dropped**; graceful drain + edge retries on idempotent routes |
 
 ## Run it locally
