@@ -125,6 +125,12 @@ detectable and compensated.
     0 dropped**. Throughput is CPU-bound on this shared burstable VM: about 1,470 req/s combined (up from
     about 920 before the exact memory-only declines in §2). Latency under that much concurrency is queueing, not
     failure.
+- **The 60,000 test.** 12 runners fired at the same second (spread 0.10 s), 3 shows × 20,000 = 63,000 reserves in
+  flight at once over HTTP/2: 0 × 5xx, 0 dropped, 0 double grants, every show reconciled, all answered within 68 s.
+  The same wave as 20,000 *new HTTP/1.1 TLS connections* in one second: 0 errors and correctness intact, but 2% of
+  clients hit a 30 s connect timeout while about 10 CPU-seconds of TLS handshakes queued on 2 vCPUs. That is a
+  hardware ceiling (more vCPU, or TLS at a load balancer, removes it), after fixing a too-small accept queue (68k
+  overflows) and a 10 s header timeout that had made it 17%.
 - **Restarts are invisible.** Kestrel drains in-flight requests on SIGTERM. The edge re-dials while the
   process is down and retries cut-off requests, but only on routes that are idempotent by design.
   Restarting the API 30 s into a live 42k-request burst gave 0 × 5xx and 0 dropped connections. In an

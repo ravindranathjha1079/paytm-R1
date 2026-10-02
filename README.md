@@ -23,6 +23,8 @@ The deployment lives for 10 days (until 2026-10-11 22:00 UTC) and then removes i
 |---|---|---|
 | 6 GitHub runners at once, about 10,500 concurrent TLS connections | 192,739 | **0 × 5xx, 0 dropped**; each 500-user hot seat → exactly one 201; all invariants reconcile |
 | API container restarted 30 s into a 42k-request burst | 41,987 | **0 × 5xx, 0 dropped**; graceful drain + edge retries on idempotent routes |
+| 60,000 reserves in flight at once: 12 runners, 3 shows x 20,000, all fired within 0.1 s (HTTP/2) | 63,000 | **0 × 5xx, 0 dropped, 0 double grants**; every show reconciled; all answered within 68 s |
+| 20,000 brand-new HTTP/1.1 TLS connections opened in the same second, one reserve each | 20,160 | 0 × 5xx, 0 double grants, all reconciled; **98% answered**, 2% hit the client's 30 s connect timeout during the TLS handshake wave (2-vCPU ceiling) |
 
 ## Run it locally
 

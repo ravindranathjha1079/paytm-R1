@@ -1,0 +1,22 @@
+12 shards, 3 shows; start spread 0.10s; sum of per-shard peak in-flight requests: 20160
+
+show 01a0fb8b-eaa8-7eb5-99f0-6212c098e7e0: 6720 requests from 4 shards (peak in flight 6720)
+  outcomes: {'0 ConnectTimeout': 118, '200': 23, '201': 710, '409 per_user_limit': 19, '409 seat_taken': 5850}
+  seats won 866, overlapping grants 0; available 134 + held 866 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 34281 ms, p99 51338 ms, max 52025 ms
+
+show 01a0fb8b-ebeb-7275-91bf-3e0047ae3e9a: 6720 requests from 4 shards (peak in flight 6720)
+  outcomes: {'0 ConnectTimeout': 18, '200': 27, '201': 702, '409 per_user_limit': 11, '409 seat_taken': 5962}
+  seats won 833, overlapping grants 0; available 167 + held 833 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 32024 ms, p99 51495 ms, max 52199 ms
+
+show 01a0fb8b-ecc8-73ad-9e85-91858a59add6: 6720 requests from 4 shards (peak in flight 6720)
+  outcomes: {'0 ConnectTimeout': 271, '200': 46, '201': 705, '409 per_user_limit': 18, '409 seat_taken': 5680}
+  seats won 836, overlapping grants 0; available 164 + held 836 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 31072 ms, p99 52391 ms, max 53415 ms
+
+total 20160 requests
+VIOLATIONS
+  show 01a0fb8b-eaa8-7eb5-99f0-6212c098e7e0: 118 requests got no response
+  show 01a0fb8b-ebeb-7275-91bf-3e0047ae3e9a: 18 requests got no response
+  show 01a0fb8b-ecc8-73ad-9e85-91858a59add6: 271 requests got no response
