@@ -123,9 +123,9 @@ class Api:
         return await self.call("POST", f"/shows/{show}/reserve", token, body, headers, tally)
 
 
-def new_session(concurrency: int, insecure: bool) -> aiohttp.ClientSession:
+def new_session(concurrency: int, insecure: bool, keepalive: float = 60) -> aiohttp.ClientSession:
     connector = aiohttp.TCPConnector(limit=concurrency, limit_per_host=concurrency, ssl=False if insecure else None,
-                                     keepalive_timeout=60)
+                                     keepalive_timeout=keepalive)
     return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=60))
 
 
@@ -448,7 +448,9 @@ async def reconcile(api: Api, show: str, confirmations: int, unhandled_before: f
 
 async def main(args) -> int:
     run = "b" + uuid.uuid4().hex[:6]
-    async with new_session(args.concurrency, args.insecure) as session:
+    # The coordinating session lets idle connections go quickly, so they don't sit alongside the stampede
+    # workers' own connections and inflate the concurrent-connection count.
+    async with new_session(args.concurrency, args.insecure, keepalive=2) as session:
         api = Api(args.base_url, session, args.concurrency)
         print(f"seatres burst {run} -> {api.base}")
 
