@@ -86,6 +86,12 @@ public static class ServiceRegistration
         });
 
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
+        services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
+        {
+            doc.Info.Title = "SeatRes — seat reservation at scale";
+            doc.Info.Description = "Atomic seat holds, idempotent reserves and payments. Money is integer paise. See README.md.";
+            return Task.CompletedTask;
+        }));
         services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 
         // Keep /metrics to what matters: our metrics, HTTP, runtime meters and Npgsql pool meters.
@@ -121,6 +127,7 @@ public static class ServiceRegistration
         app.MapShowEndpoints();
         app.MapReservationEndpoints();
         app.MapMetrics("/metrics");
+        app.MapOpenApi();
         if (app.Environment.IsEnvironment("Testing"))
             app.MapGet("/__test/boom", (Func<IResult>)(() => throw new InvalidOperationException("deliberate test failure")));
         return app;

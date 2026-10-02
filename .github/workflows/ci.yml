@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Alert rules are valid
+        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/p" prom/prometheus:v3.5.0 check rules /p/alerts.yml
       - name: Build and start the stack from a clean checkout
         run: docker compose up -d --build
       - name: Wait for readiness

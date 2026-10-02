@@ -53,3 +53,16 @@ public class HealthTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 }
+
+public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
+{
+    [Fact]
+    public async Task The_api_describes_itself()
+    {
+        var res = await factory.CreateClient().GetAsync("/openapi/v1.json");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var doc = await res.Content.ReadAsStringAsync();
+        Assert.Contains("/shows/{id}/reserve", doc);
+        Assert.Contains("/reservations/{id}/confirm", doc);
+    }
+}
