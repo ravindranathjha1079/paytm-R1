@@ -9,7 +9,7 @@ on:
         default: https://seatres-paytm.centralindia.cloudapp.azure.com
       args:
         description: Extra burst.py arguments
-        default: --workers 4 --concurrency 500
+        default: --workers 4 --concurrency 200
 
 jobs:
   burst:

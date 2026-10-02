@@ -243,7 +243,8 @@ async def stampede(api: Api, args, show: str, run: str) -> tuple[Tally, list[str
     if args.workers <= 1:
         tally, owners, retries = await stampede_part(api, show, plan, run, 0)
     else:
-        chunks = [plan[i::args.workers] for i in range(args.workers)]
+        # Partition by user so each worker mints only its own users' tokens.
+        chunks = [[p for p in plan if p[0] % args.workers == i] for i in range(args.workers)]
         loop = asyncio.get_running_loop()
         with concurrent.futures.ProcessPoolExecutor(args.workers) as pool:
             parts = await asyncio.gather(*(loop.run_in_executor(
