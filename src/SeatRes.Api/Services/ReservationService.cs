@@ -40,17 +40,24 @@ public sealed class ReservationService(
         var confirm = req.Confirm ?? false;
         var hash = RequestHash.ForReserve(show.Id, labels, confirm);
 
-        // Exactly one idempotency lookup per request: a key already used is replayed, never re-decided.
+        // A seat known taken by someone else is declined from memory with no database work at all: a winning
+        // idempotency key for that seat can only belong to its holder, so this caller has nothing to replay.
         var fast = options.Value.FastPathEnabled;
-        var cached = fast ? FastDecline(show, seatNos!) : null;
+        var cached = fast ? FastDecline(show, seatNos!, userId) : null;
+        if (cached is { CallerMayHoldIt: false })
+            return outcomes.Record("reserve", cached.Value.Decline, userId, show.Id, null, labels, layer: "taken_cache");
+
+        // Otherwise exactly one idempotency lookup: a key already used is replayed, never re-decided.
         var existing = await IdempotencyStore.FindAsync(db.DataSource, userId, IdemScope.Reserve, key!, ct);
         if (existing is not null)
             return outcomes.Record("reserve", IdempotencyStore.Replay(existing, hash), userId, show.Id, null, labels);
         if (cached is not null)
-            return outcomes.Record("reserve", cached, userId, show.Id, null, labels, layer: "taken_cache");
+            return outcomes.Record("reserve", cached.Value.Decline, userId, show.Id, null, labels, layer: "taken_cache");
 
         var command = new ReserveCommand(show, userId, key!, hash, seatNos!, confirm, gatewayHint);
         var (result, gated) = await DecideAsync(command, fast, ct);
+        if (gated is { CallerMayHoldIt: false })
+            return outcomes.Record("reserve", gated.Value.Decline, userId, show.Id, null, labels, layer: "gate");
         if (gated is not null)
         {
             // The cache only learns a seat is taken after the winner commits. If that winner was this same key
@@ -58,7 +65,7 @@ public sealed class ReservationService(
             var committed = await IdempotencyStore.FindAsync(db.DataSource, userId, IdemScope.Reserve, key!, ct);
             return committed is not null
                 ? outcomes.Record("reserve", IdempotencyStore.Replay(committed, hash), userId, show.Id, null, labels)
-                : outcomes.Record("reserve", gated, userId, show.Id, null, labels, layer: "gate");
+                : outcomes.Record("reserve", gated.Value.Decline, userId, show.Id, null, labels, layer: "gate");
         }
 
         // Metrics only after the transaction committed, so a retried transaction is never counted twice.
@@ -76,29 +83,33 @@ public sealed class ReservationService(
     /// at the gate, the cache shows the seat was taken by the request ahead — the gate is released before any
     /// further database work so waiters drain without queueing on each other's round trips.
     /// </summary>
-    private async Task<(ReserveTxResult? Result, ApiResult? GatedDecline)> DecideAsync(ReserveCommand cmd, bool fast,
+    private async Task<(ReserveTxResult? Result, FastDeclineResult? GatedDecline)> DecideAsync(ReserveCommand cmd, bool fast,
         CancellationToken ct)
     {
         using var lease = fast ? await gate.AcquireAsync(cmd.Show.Id, cmd.SeatNos, ct) : SeatGate.Lease.None;
-        if (lease.Gated && FastDecline(cmd.Show, cmd.SeatNos) is { } gated)
+        if (lease.Gated && FastDecline(cmd.Show, cmd.SeatNos, cmd.UserId) is { } gated)
             return (null, gated);
 
         var result = await reserveTx.ExecuteAsync(cmd, ct);
         if (fast && result.ReservationId is not null)
-            takenCache.MarkTaken(cmd.Show.Id, result.ClaimedSeatNos, result.ClaimedUntil);
+            takenCache.MarkTaken(cmd.Show.Id, result.ClaimedSeatNos, result.ClaimedUntil, cmd.UserId);
         if (fast)
             foreach (var t in result.TakenSeats)
-                takenCache.MarkTaken(cmd.Show.Id, [t.SeatNo], t.Until);
+                takenCache.MarkTaken(cmd.Show.Id, [t.SeatNo], t.Until, t.Holder);
         return (result, null);
     }
 
-    private ApiResult? FastDecline(ShowInfo show, int[] seatNos)
+    /// <param name="CallerMayHoldIt">True if any taken seat might be the caller's own (or its holder is unknown):
+    /// then the caller's idempotency key must be checked before declining.</param>
+    private readonly record struct FastDeclineResult(ApiResult Decline, bool CallerMayHoldIt);
+
+    private FastDeclineResult? FastDecline(ShowInfo show, int[] seatNos, string userId)
     {
-        var taken = takenCache.FindTaken(show.Id, seatNos);
-        return taken.Length == 0
-            ? null
-            : ApiResult.Fail(409, ErrorCodes.SeatTaken, "one or more requested seats are already taken",
-                new Dictionary<string, object?> { ["taken"] = taken.Select(show.LabelOf).ToArray() });
+        var taken = takenCache.FindTakenWithHolders(show.Id, seatNos);
+        if (taken.Length == 0) return null;
+        var decline = ApiResult.Fail(409, ErrorCodes.SeatTaken, "one or more requested seats are already taken",
+            new Dictionary<string, object?> { ["taken"] = taken.Select(t => show.LabelOf(t.SeatNo)).ToArray() });
+        return new FastDeclineResult(decline, taken.Any(t => t.Holder is null || t.Holder == userId));
     }
 
     private (int[]? SeatNos, ApiResult? Error) ResolveSeats(ShowInfo show, string[]? seats)

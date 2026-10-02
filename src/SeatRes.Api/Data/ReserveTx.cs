@@ -9,7 +9,7 @@ namespace SeatRes.Api.Data;
 public sealed record ReserveCommand(ShowInfo Show, string UserId, string IdemKey, byte[] RequestHash, int[] SeatNos, bool Confirm,
     string? GatewayHint = null);
 
-public sealed record TakenSeat(int SeatNo, DateTime? Until);
+public sealed record TakenSeat(int SeatNo, DateTime? Until, string? Holder = null);
 
 public sealed record ReserveTxResult(
     ApiResult Response, Guid? ReservationId, int[] ClaimedSeatNos, DateTime? ClaimedUntil,
@@ -80,7 +80,7 @@ public sealed class ReserveTx(Db db, TimeProvider time, IOptions<SeatResOptions>
                     SeatStatus.Held => t.HoldExpiresAt,
                     SeatStatus.PaymentPending => t.PayDeadline,
                     _ => null,
-                })).ToList(),
+                }, t.HolderUserId)).ToList(),
                 null);
 
         var previousOwners = rows.Where(r => r.ReservationId is not null).Select(r => r.ReservationId!.Value)

@@ -33,6 +33,25 @@ public class FastPathTests(PostgresFixture db)
     }
 
     [Fact]
+    public async Task Other_users_storming_a_taken_seat_are_declined_without_touching_the_database()
+    {
+        var client = await Api.ReadyClientAsync();
+        var show = await client.CreateShowAsync(TestClients.Seats("A", 5));
+        Assert.Equal(HttpStatusCode.Created, (await Reserve.SendAsync(client, await client.TokenAsync(TestClients.NewUser()), show, ["A3"])).Status);
+        var tokens = await client.TokensAsync(200, "nodb");
+        double Lookups(string m) => m.Split('\n').Where(l => l.StartsWith("seatres_idempotency_lookups_total"))
+            .Sum(l => double.Parse(l.Split(' ')[^1], CultureInfo.InvariantCulture));
+        var metricsBefore = await client.GetStringAsync("/metrics");
+        Assert.Contains("seatres_idempotency_lookups_total", metricsBefore);
+        var before = Lookups(metricsBefore);
+
+        var responses = await Task.WhenAll(tokens.Select(t => Reserve.PostAsync(client, t, show, ["A3"])));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
+        Assert.Equal(before, Lookups(await client.GetStringAsync("/metrics")));
+    }
+
+    [Fact]
     public async Task Retrying_the_winning_key_replays_the_reservation_instead_of_seat_taken()
     {
         var client = await Api.ReadyClientAsync();

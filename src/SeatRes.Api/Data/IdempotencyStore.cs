@@ -43,6 +43,7 @@ public static class IdempotencyStore
 
     public static async Task<IdemRecord?> FindAsync(NpgsqlDataSource ds, string user, string scope, string key, CancellationToken ct)
     {
+        Observability.SeatResMetrics.IdempotencyLookups.Inc();
         await using var c = await ds.OpenConnectionAsync(ct);
         return await GetAsync(c, null, user, scope, key);
     }
