@@ -101,10 +101,13 @@ class Api:
         return status, data
 
     async def token(self, user_id: str) -> str:
-        status, body = await self.call("POST", "/auth/token", body={"user_id": user_id})
-        if status != 200:
-            raise RuntimeError(f"token mint failed for {user_id}: {status} {body}")
-        return body["token"]
+        # Setup, not the thing under test: retry a few times before giving up.
+        for attempt in range(4):
+            status, body = await self.call("POST", "/auth/token", body={"user_id": user_id})
+            if status == 200:
+                return body["token"]
+            await asyncio.sleep(0.5 * (attempt + 1))
+        raise RuntimeError(f"token mint failed for {user_id}: {status} {body}")
 
     async def tokens(self, prefix: str, n: int) -> list[str]:
         return await asyncio.gather(*(self.token(f"{prefix}-{i}") for i in range(n)))

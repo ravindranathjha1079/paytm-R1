@@ -8,8 +8,22 @@ set -euo pipefail
 IP=${SEATRES_PRIVATE_IP:-10.0.0.10}
 DEV=${SEATRES_DEV:-eth0}
 PAIRS=("80 9080" "443 9443")
+# Beyond this many concurrent connections to our Caddy, new ones are refused at once (TCP reset) instead of
+# letting the proxy run out of memory and drop every open connection.
+MAX_CONNS=${SEATRES_MAX_CONNS:-12000}
+cap_rule() { echo "-p tcp --syn --dport 9443 -m connlimit --connlimit-above $MAX_CONNS --connlimit-mask 0 -m comment --comment seatres -j REJECT --reject-with tcp-reset"; }
 
 rule() { echo "-d $IP/32 -p tcp --dport $1 -m comment --comment seatres -j REDIRECT --to-ports $2"; }
+
+remove_cap() {
+  # shellcheck disable=SC2046
+  while iptables -C INPUT $(cap_rule) 2>/dev/null; do iptables -D INPUT $(cap_rule); done
+}
+
+ensure_cap() {
+  # shellcheck disable=SC2046
+  iptables -C INPUT $(cap_rule) 2>/dev/null || iptables -I INPUT 1 $(cap_rule)
+}
 
 remove_rules() {
   for pair in "${PAIRS[@]}"; do
@@ -30,6 +44,7 @@ up() {
   # Earlier versions added a /24 (which also adds a subnet route); replace it with a /32.
   if ip -4 addr show dev "$DEV" | grep -q "inet $IP/24"; then ip addr add "$IP/32" dev "$DEV"; ip addr del "$IP/24" dev "$DEV"; fi
   ip -4 addr show dev "$DEV" | grep -q "inet $IP/32" || ip addr add "$IP/32" dev "$DEV"
+  ensure_cap
   in_order && return 0   # nothing to repair: never churn rules that are already right
   remove_rules
   for pair in "${PAIRS[@]}"; do
@@ -40,6 +55,7 @@ up() {
 }
 
 down() {
+  remove_cap
   remove_rules
   for prefix in 32 24; do
     if ip -4 addr show dev "$DEV" | grep -q "inet $IP/$prefix"; then ip addr del "$IP/$prefix" dev "$DEV"; fi
@@ -49,6 +65,7 @@ down() {
 case "${1:-up}" in
   up) up ;;
   down) down ;;
-  status) ip -4 addr show dev "$DEV" | grep "inet $IP/" || true; iptables -t nat -S PREROUTING | grep seatres || true ;;
+  status) ip -4 addr show dev "$DEV" | grep "inet $IP/" || true; iptables -t nat -S PREROUTING | grep seatres || true
+          iptables -S INPUT | grep seatres || true ;;
   *) echo "usage: $0 up|down|status" >&2; exit 2 ;;
 esac

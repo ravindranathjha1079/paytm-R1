@@ -35,12 +35,13 @@ services:
       LOGS_USER: ${LOGS_USER}
       LOGS_HASH: ${LOGS_HASH}
       # Thousands of concurrent TLS connections: let the Go GC work hard well before the cgroup limit.
-      GOMEMLIMIT: 320MiB
+      GOMEMLIMIT: 760MiB
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
       - caddyconfig:/config
-    deploy: { resources: { limits: { cpus: "0.8", memory: 384M } } }
+    # ~57 KB per TLS connection measured: 896M is ~13k concurrent connections; seatres-net caps at 12k.
+    deploy: { resources: { limits: { cpus: "0.8", memory: 896M } } }
     restart: unless-stopped
 
 volumes:

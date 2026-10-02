@@ -38,7 +38,9 @@ jobs:
         name: Burst
         env:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
-        run: ./burst.sh "${{ inputs.base_url }}" ${{ inputs.args }} | tee burst-shard-${{ matrix.shard }}.txt
+        run: |
+          set -o pipefail
+          ./burst.sh "${{ inputs.base_url }}" ${{ inputs.args }} | tee burst-shard-${{ matrix.shard }}.txt
       - if: steps.gate.outputs.run == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
