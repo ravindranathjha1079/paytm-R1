@@ -1,0 +1,42 @@
+name: teardown
+
+# Azure half of the 10-day lifetime. The VM removes its own containers/units at the same date via a
+# systemd timer (deploy/vm/teardown.sh); this removes the public IP and its NIC ip-config.
+# Identity: GitHub OIDC -> app "seatres-teardown-oidc", Network Contributor on that NIC and IP only.
+on:
+  schedule:
+    - cron: "30 22 * * *" # daily, 30 min after the VM-side teardown time
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Tear down now regardless of EXPIRES_ON
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Due?
+        id: due
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          echo "today=$today expires_on=${{ vars.EXPIRES_ON }}"
+          if [ "${{ inputs.force }}" = "true" ] || [[ ! "$today" < "${{ vars.EXPIRES_ON }}" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.due.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.due.outputs.run == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - if: steps.due.outputs.run == 'true'
+        name: Remove the seatres public IP and NIC ip-config
+        run: bash deploy/azure/network-down.sh
