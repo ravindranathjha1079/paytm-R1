@@ -1,0 +1,38 @@
+
+seatres burst bea4626 -> https://seatres-paytm.centralindia.cloudapp.azure.com
+show 01a0f9ea-4722-7dff-8e18-bd8b1ffd3b68: 1000 seats, price 25000 paise, per_user_limit 4
+
+  hot-seat           ok       500 requests  201: 1, 409 seat_taken: 499
+                          500 users -> seat A1: 1 x 201, 499 x 409 seat_taken
+  group-overlap      ok        48 requests  201: 16, 409 seat_taken: 32
+                          16 trials of [3-seat group x2] vs [1 seat]: 0 split groups
+  stampede           ok     21006 requests  200: 31, 201: 690, 409 per_user_limit: 3, 409 seat_taken: 20282
+                          21006 requests in 31.3s (671 req/s), 1006 concurrent duplicate retries, 809 seats won
+  idempotency        ok        51 requests  200: 49, 201: 1, 409 idempotency_mismatch: 1
+                          same key x50 concurrently: 1 x 201, 49 x 200 replay, 1 distinct reservation
+                          same key, different seats: 409 idempotency_mismatch
+  per-user-limit     ok        10 requests  201: 4, 409 per_user_limit: 6
+                          1 user, 10 parallel reserves, limit 4: 4 held, 6 x 409 per_user_limit
+  spoof              ok         4 requests  201: 1, 404 not_found: 3
+                          spoofed body -> acted as token user; other user cancel/read/confirm: 404/404/404
+  payments           ok         8 requests  200: 4, 201: 3, 402 payment_declined: 1
+                          confirm 200, replay 200, hold+pay 201, cancel->refund 200, decline 402, retry 200
+
+reconciliation
+  available 142 + held 856 + confirmed 2 = 1000 (total_seats 1000)
+  ledger: charged 100000 - refunded 50000 = 50000 paise (expected 50000)
+  /metrics: seats gauge matches API; confirmed counter 3 (this run confirmed 3)
+
+outcome distribution (all scenarios)
+  200                                      84
+  201                                     716
+  402 payment_declined                      1
+  404 not_found                             3
+  409 idempotency_mismatch                  1
+  409 per_user_limit                        9
+  409 seat_taken                        20813
+  5xx                                       0
+
+latency  p50 873 ms   p99 1597 ms   max 2180 ms   mean 912 ms
+
+ALL CHECKS PASSED

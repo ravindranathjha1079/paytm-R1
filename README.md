@@ -11,9 +11,18 @@ charges twice. One Postgres is the only place a seat decision is made.
 | **Live logs** (Dozzle, basic auth — credentials in the submission email) | https://seatres-paytm.centralindia.cloudapp.azure.com/logs/ |
 | **Metrics** (Prometheus text) | https://seatres-paytm.centralindia.cloudapp.azure.com/metrics |
 | **Health** | `/health/live` (process) · `/health/ready` (DB reachable + migrated, fails closed with 503) |
+| **OpenAPI** | https://seatres-paytm.centralindia.cloudapp.azure.com/openapi/v1.json |
+| **Evidence** | [`docs/evidence/`](docs/evidence/): raw outputs of the live runs below |
 | Design | [`WRITEUP.md`](WRITEUP.md) · spec and plan in [`docs/superpowers/`](docs/superpowers/) |
 
 The deployment lives for 10 days (until 2026-10-11 22:00 UTC) and then removes itself.
+
+**Measured live** (see [`docs/evidence/`](docs/evidence/)):
+
+| Run | Requests | Result |
+|---|---|---|
+| 6 GitHub runners at once, about 10,500 concurrent TLS connections | 192,681 | **0 × 5xx, 0 dropped**; each 500-user hot seat → exactly one 201; all invariants reconcile |
+| API container restarted 30 s into a 42k-request burst | 41,987 | **0 × 5xx, 0 dropped**; graceful drain + edge retries on idempotent routes |
 
 ## Run it locally
 
@@ -82,7 +91,7 @@ curl -s -X POST $BASE/reservations/<id>/confirm -H "Authorization: Bearer $TOKEN
 | `POST /auth/token {user_id}` | — | 200 `{token}` (stand-in identity provider) | 400 |
 | `POST /auth/admin-token` + `X-Admin-Key` | admin key | 200 `{token}` | 401 |
 | `POST /shows {name, seats[], price_paise, per_user_limit?}` | admin | 201, every seat `available` | 400, 401, 403 |
-| `GET /shows/{id}` | — | per-seat status, counts, `reconciled`, ledger | 404 |
+| `GET /shows/{id}` (`?seats=false` for counts only) | — | per-seat status, counts, `reconciled`, ledger | 404 |
 | `POST /shows/{id}/reserve {seats[], idempotency_key, confirm?}` | user | 201 `held` (5-minute hold) · 201 `confirmed` with `confirm:true` · 200 replay | 409 `seat_taken` / `per_user_limit` / `idempotency_mismatch`, 402, 429, 400, 404 |
 | `POST /reservations/{id}/confirm` + `Idempotency-Key` | owner | 200 `confirmed` | 409 `hold_lost` / `payment_in_progress` / `per_user_limit`, 402 (+`retry_until`), 202 |
 | `POST /reservations/{id}/cancel` | owner | 200 `cancelled` / `refunded` | 409, 404 |
@@ -106,8 +115,11 @@ released by a timer — it simply becomes claimable, so correctness never depend
 - Logs: one structured JSON line per request and per domain decision (`reserve.outcome`,
   `confirm.outcome`, `gateway.charge`, `refund.issued`, `spoof_attempt`, `reconciliation.violation`),
   all carrying `request_id`.
-- Dashboard: "SeatRes — On-sale burst" (5xx, reconciliation, outcomes by reason, seats by state, latency,
-  pool, payments).
+- Dashboard: "SeatRes — On-sale burst": firing alerts, 5xx, reconciliation, outcomes by reason, seats by
+  state, latency, pool, payments.
+- Alerts as code: [`deploy/prometheus/alerts.yml`](deploy/prometheus/alerts.yml) holds the "page me" list
+  (5xx, unhandled errors, reconciliation failure, seat-lost refund, stuck payments, DB down, pool saturated),
+  evaluated by Prometheus and shown on the dashboard. CI validates the rules with `promtool`.
 
 ## Deployment
 
@@ -117,6 +129,12 @@ The service runs on an existing Azure VM shared with other apps, without touchin
 - `deploy/vm/bootstrap.sh` clones this repo to `/opt/seatres`, generates secrets into `.env`, installs a
   small systemd unit that redirects 80/443 **for that IP only** to our own Caddy (9080/9443, automatic
   TLS), and runs `docker compose -f compose.yaml -f deploy/compose.prod.yaml up -d --build`.
+- Edge: Caddy dials the API container directly (fixed internal IP, at most 768 upstream connections). It
+  re-dials while the API restarts, and retries cut-off requests on idempotent routes only. A 12k
+  connection cap refuses excess connections instead of running out of memory. Restarts and redeploys
+  don't drop requests.
+- Shared-VM manners: secondary IP as /32, kernel limits only ever raised (and restored at teardown), lower
+  CPU weight than the other apps, nothing of theirs touched.
 - Teardown: a systemd timer on the VM runs `deploy/vm/teardown.sh` at the expiry, and
   `.github/workflows/teardown.yml` (GitHub OIDC, Network Contributor on that IP and NIC only) removes the
   IP afterwards.

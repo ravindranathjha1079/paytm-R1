@@ -102,9 +102,22 @@ detectable and compensated.
   transaction, and a seat can only be won once.
 - **Admission control**: a concurrency limiter on write routes (512 in flight, bounded queue); beyond it
   requests get an immediate **429 + Retry-After** — a 4xx, never a 5xx or a dropped connection.
-- On one 2-vCPU VM the edge (TLS handshakes and memory per connection) breaks before the database does.
-  The edge Caddy was in fact OOM-killed at 128 MB under ~2,000 concurrent TLS connections during testing;
-  it now has 384 MB with `GOMEMLIMIT`.
+- On one 2-vCPU VM the edge breaks before the database does, and I measured it rather than guessing:
+  - Caddy needs about 57 KB per open TLS connection. It was OOM-killed at 128 MB (about 2k connections) and
+    at 384 MB (about 6k). It now has 896 MB with `GOMEMLIMIT` (about 13k).
+  - A kernel `connlimit` at 12k refuses connections beyond that with an immediate reset, rather than the
+    proxy dying and dropping everyone.
+  - Docker's userland port proxy timed out dialling at about 10k connections (502s). The edge now dials the
+    API container directly, with a bounded upstream pool, so excess requests queue at the edge, not in
+    the kernel.
+  - Measured: 6 runners at once, about 10,500 concurrent TLS connections, 192,681 requests, **0 × 5xx and
+    0 dropped**. Throughput is CPU-bound at about 900–1,000 req/s on this shared burstable VM; latency
+    under that much concurrency is queueing, not failure.
+- **Restarts are invisible.** Kestrel drains in-flight requests on SIGTERM. The edge re-dials while the
+  process is down and retries cut-off requests, but only on routes that are idempotent by design.
+  Restarting the API 30 s into a live 42k-request burst gave 0 × 5xx and 0 dropped connections. In an
+  earlier version without those fixes, the restart cut off ~1,600 requests, yet no seat was double-granted
+  and the ledger stayed exact: correctness never lived in process memory.
 - Next steps for real 200k: a virtual waiting room in front of the on-sale; TLS at the edge (Front Door /
   App Gateway) with keep-alive and HTTP/2; N stateless replicas behind a load balancer with PgBouncer
   (correctness unchanged — Postgres still decides); push seat-map changes to clients so most never ask for
@@ -113,7 +126,9 @@ detectable and compensated.
 ## 6. Observability — what pages me at 2am
 
 Metrics, structured logs with request ids, Grafana dashboard and Dozzle logs are described in the README.
-I would page on:
+The list below is not just prose: it is [`deploy/prometheus/alerts.yml`](deploy/prometheus/alerts.yml),
+evaluated live by Prometheus and shown as "alerts firing" on the dashboard. Stopping Postgres fires
+`SeatResDatabaseDown` within a minute (tested). I would page on:
 
 1. any 5xx or `seatres_unhandled_errors_total` increase;
 2. `seatres_reconciliation_ok == 0` (seat counts or ledger do not add up);
@@ -130,6 +145,8 @@ Sustained 429s are a capacity-planning signal, not a page.
 |---|---|---|
 | Integration suite (real Postgres, in-memory layer off) | 150 tests | all pass; includes 500-on-one-seat, overlapping groups ×20, limit storms, payment races |
 | Live, GitHub runner, `--workers 4 --concurrency 200 --stampede 40000 --overload 30000` | 72,600+ | 0 × 5xx, 0 transport errors; hot seat 1 × 201 + 499 × 409; reconciliation, ledger and `/metrics` all match; p50 650 ms, p99 1.45 s (client is ~200 ms RTT away) |
+| Live, 6 runners at once (~10,500 concurrent TLS connections) | 192,681 | 0 × 5xx, 0 dropped; every shard's hot seat had exactly one winner |
+| Live, API container restarted mid-burst | 41,987 | 0 × 5xx, 0 dropped; invariants exact |
 
 Single-source bursts top out around 700–900 req/s because of the client side (one source IP's NAT ports
 and TLS), not the service: during those runs the API used under 0.7 CPU and Postgres under 0.8.
@@ -160,6 +177,12 @@ I used Claude Code (Anthropic) throughout. Honest split:
 - Found and fixed issues during testing: Dapper not binding positional records with array columns; the
   idempotency/cache race above; a metrics gauge that never refreshed (integer overflow); the edge proxy
   OOM; GitHub's new OIDC subject format breaking the teardown login.
+- An independent AI review pass found a real 500: a free show (price 0) crashed confirm, because the ledger
+  rejects zero-amount rows. It also found counters incremented inside retryable transactions, and three
+  ways the burst script could report a false pass. All fixed with tests.
+- Load testing found that the burst checker flagged legal re-grants after an expired hold as
+  double-sells. I had it verify against the database (0 overlapping live grants) before changing the
+  checker to compare hold windows, not reservation ids.
 - Chose not to modify the other apps' reverse proxy on the shared VM (its config is overwritten by that
   app's own deploys) and routed the new IP to a separate proxy instead.
 

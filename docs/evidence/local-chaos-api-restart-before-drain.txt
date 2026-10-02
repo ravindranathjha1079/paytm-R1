@@ -1,6 +1,4 @@
 
-[notice] A new release of pip is available: 24.2 -> 26.2.1
-[notice] To update, run: python.exe -m pip install --upgrade pip
 seatres burst b735a41 -> http://localhost:8080
 show 01a0fa2c-34dd-792b-958c-db1d0d6f9a07: 1000 seats, price 25000 paise, per_user_limit 4
 
