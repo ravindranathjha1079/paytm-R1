@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import collections
 import concurrent.futures
+import datetime
 import json
 import os
 import random
@@ -217,7 +218,8 @@ async def stampede_part(api: Api, show: str, plan: list[tuple[int, list[str], bo
     tally = Tally()
     user_ids = sorted({u for u, _, _ in plan})
     tokens = dict(zip(user_ids, await asyncio.gather(*(api.token(f"{run}-s{worker}-{u}") for u in user_ids))))
-    owners: dict[str, set[str]] = collections.defaultdict(set)
+    # seat -> {reservation_id: (granted_at, live_until)}; a hold is live until expires_at, a confirmation forever.
+    owners: dict[str, dict[str, tuple[str, str]]] = collections.defaultdict(dict)
     retries = 0
 
     async def one(user: int, seats: list[str], retry: bool) -> None:
@@ -229,11 +231,12 @@ async def stampede_part(api: Api, show: str, plan: list[tuple[int, list[str], bo
             calls.append(api.reserve(tokens[user], show, seats, key, tally=tally))
         for status, body in await asyncio.gather(*calls):
             if status in (200, 201) and "reservation_id" in body:
+                window = (body.get("server_time", ""), body.get("expires_at") or "9999")
                 for seat in body["seats"]:
-                    owners[seat].add(body["reservation_id"])
+                    owners[seat][body["reservation_id"]] = window
 
     await asyncio.gather(*(one(u, s, r) for u, s, r in plan))
-    return tally, {k: sorted(v) for k, v in owners.items()}, retries
+    return tally, {k: dict(v) for k, v in owners.items()}, retries
 
 
 def _stampede_worker(base: str, show: str, plan: list, run: str, worker: int, concurrency: int, insecure: bool) -> dict:
@@ -257,18 +260,33 @@ async def stampede(api: Api, args, show: str, run: str) -> tuple[Tally, list[str
             parts = await asyncio.gather(*(loop.run_in_executor(
                 pool, _stampede_worker, api.base, show, chunk, run, i, args.concurrency, args.insecure)
                 for i, chunk in enumerate(chunks)))
-        tally, owners, retries = Tally(), collections.defaultdict(list), 0
+        tally, owners, retries = Tally(), collections.defaultdict(dict), 0
         for p in parts:
             tally.merge(Tally.from_dict(p["tally"]))
             retries += p["retries"]
-            for seat, ids in p["owners"].items():
-                owners[seat].extend(ids)
+            for seat, grants in p["owners"].items():
+                owners[seat].update({rid: tuple(w) for rid, w in grants.items()})
     elapsed = time.perf_counter() - started
     total = sum(tally.counts.values())
-    doubled = {seat: ids for seat, ids in owners.items() if len(set(ids)) > 1}
+    def ts(value: str) -> datetime.datetime:
+        if not value or value.startswith("9999"):
+            return datetime.datetime.max
+        value = value.rstrip("Z")
+        if "." in value:  # .NET emits up to 7 fractional digits; Python parses up to 6
+            head, frac = value.split(".", 1)
+            value = f"{head}.{frac[:6]}"
+        return datetime.datetime.fromisoformat(value)
+
+    def overlapping(grants: dict) -> bool:
+        # Re-granting a seat after a hold expired is legal; two grants alive at the same instant are not.
+        windows = sorted((ts(a), ts(b)) for a, b in grants.values())
+        return any(nxt[0] < cur[1] for cur, nxt in zip(windows, windows[1:]))
+    doubled = {seat: grants for seat, grants in owners.items() if overlapping(grants)}
+    regranted = sum(1 for grants in owners.values() if len(grants) > 1) - len(doubled)
     notes = [f"{total} requests in {elapsed:.1f}s ({total / max(elapsed, 1e-9):.0f} req/s), "
-             f"{retries} concurrent duplicate retries, {len(owners)} seats won"]
-    bad = [f"seat {seat} granted to {len(set(ids))} reservations" for seat, ids in list(doubled.items())[:10]]
+             f"{retries} concurrent duplicate retries, {len(owners)} seats won, "
+             f"{regranted} re-granted after an expired hold"]
+    bad = [f"seat {seat} granted to overlapping reservations {sorted(grants)}" for seat, grants in list(doubled.items())[:10]]
     return tally, notes, bad
 
 

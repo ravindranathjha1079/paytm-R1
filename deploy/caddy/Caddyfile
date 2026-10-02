@@ -35,10 +35,13 @@ http://{$SEATRES_FQDN} {
 	}
 
 	handle {
-		reverse_proxy 127.0.0.1:8080 {
+		reverse_proxy {$API_UPSTREAM:127.0.0.1:8080} {
 			transport http {
+				# Bounded upstream: excess requests queue here instead of opening thousands of connections.
+				max_conns_per_host 768
+				dial_timeout 10s
 				keepalive 2m
-				keepalive_idle_conns 1024
+				keepalive_idle_conns 768
 			}
 		}
 	}

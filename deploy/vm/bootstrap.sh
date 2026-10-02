@@ -52,6 +52,10 @@ systemctl daemon-reload
 systemctl enable --now seatres-net.service seatres-net-check.timer seatres-teardown.timer >/dev/null
 systemctl restart seatres-net.service
 
+# The network's subnet is fixed in compose.prod.yaml; an older network without it must be recreated.
+if docker network inspect seatres_default >/dev/null 2>&1 &&    [ "$(docker network inspect seatres_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')" != "172.31.250.0/24" ]; then
+  docker compose -f compose.yaml -f deploy/compose.prod.yaml --env-file .env down
+fi
 docker compose -f compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d --build --remove-orphans
 docker image prune -f --filter "label=com.docker.compose.project=seatres" >/dev/null || true
 

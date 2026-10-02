@@ -4,11 +4,18 @@
 # Limits are sized to leave headroom for the other apps on this 2 vCPU / 4 GB VM.
 services:
   postgres:
+    cpu_shares: 512   # yield to the VM's other apps when CPU is contended
     command: ["postgres", "-c", "max_connections=60", "-c", "shared_buffers=128MB", "-c", "work_mem=4MB", "-c", "max_wal_size=512MB"]
     deploy: { resources: { limits: { cpus: "0.8", memory: 512M } } }
 
   api:
     image: seatres-api:prod
+    cpu_shares: 512
+    # Fixed address so the edge proxy dials the container directly, not through Docker's userland port proxy
+    # (which timed out dialling under ~10k concurrent connections).
+    networks:
+      default:
+        ipv4_address: 172.31.250.20
     environment:
       SeatRes__AdmissionPermits: "512"
       SeatRes__AdmissionQueue: "30000"
@@ -30,8 +37,10 @@ services:
   caddy:
     image: caddy:2
     network_mode: host
+    cpu_shares: 512
     environment:
       SEATRES_FQDN: ${SEATRES_FQDN}
+      API_UPSTREAM: 172.31.250.20:8080
       LOGS_USER: ${LOGS_USER}
       LOGS_HASH: ${LOGS_HASH}
       # Thousands of concurrent TLS connections: let the Go GC work hard well before the cgroup limit.
@@ -43,6 +52,12 @@ services:
     # ~57 KB per TLS connection measured: 896M is ~13k concurrent connections; seatres-net caps at 12k.
     deploy: { resources: { limits: { cpus: "0.8", memory: 896M } } }
     restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
 
 volumes:
   caddydata:
