@@ -21,6 +21,7 @@ namespace SeatRes.Api;
 public static class ServiceRegistration
 {
     public const string WritePolicy = "writes";
+    public const string ReadPolicy = "reads";
 
     public static IServiceCollection AddSeatRes(this IServiceCollection services, IConfiguration config)
     {
@@ -48,6 +49,7 @@ public static class ServiceRegistration
         services.AddSingleton<PaymentTx>();
         services.AddSingleton<CancelTx>();
         services.AddSingleton<PaymentService>();
+        services.AddSingleton<GatewayDataSource>();
         services.AddSingleton<IPaymentGateway, SimulatedGateway>();
         services.AddSingleton<TakenSeatCache>();
         services.AddSingleton<SeatGate>();
@@ -65,6 +67,13 @@ public static class ServiceRegistration
             {
                 c.PermitLimit = seatres.Value.AdmissionPermits;
                 c.QueueLimit = seatres.Value.AdmissionQueue;
+                c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            });
+            // Reads (show state polling) get their own budget so they can never starve writes of DB connections.
+            o.AddConcurrencyLimiter(ReadPolicy, c =>
+            {
+                c.PermitLimit = 128;
+                c.QueueLimit = 5_000;
                 c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
             });
             o.OnRejected = async (ctx, _) =>
@@ -86,6 +95,8 @@ public static class ServiceRegistration
     {
         app.Services.GetRequiredService<SeatGauge>().Register();
         app.UseMiddleware<RequestIdMiddleware>();
+        // Outside the error handler, so a request the handler turns into a 500 is counted as a 500.
+        app.UseHttpMetrics(o => o.ReduceStatusCodeCardinality());
         app.UseSerilogRequestLogging(o =>
         {
             o.MessageTemplate = "http {RequestMethod} {RequestPath} {StatusCode} {Elapsed:0.0}ms";
@@ -94,7 +105,6 @@ public static class ServiceRegistration
                 : LogEventLevel.Information;
         });
         app.UseMiddleware<ErrorHandlingMiddleware>();
-        app.UseHttpMetrics(o => o.ReduceStatusCodeCardinality());
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
@@ -108,6 +118,8 @@ public static class ServiceRegistration
         app.MapShowEndpoints();
         app.MapReservationEndpoints();
         app.MapMetrics("/metrics");
+        if (app.Environment.IsEnvironment("Testing"))
+            app.MapGet("/__test/boom", (Func<IResult>)(() => throw new InvalidOperationException("deliberate test failure")));
         return app;
     }
 }

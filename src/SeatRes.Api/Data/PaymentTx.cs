@@ -24,7 +24,8 @@ public sealed record AttemptRow
 public sealed record PinResult(ApiResult? Response, PinnedPayment? Pinned, Guid? ShowId);
 
 /// <param name="Confirmed">True when this call confirmed the reservation; metrics are recorded by the caller after commit.</param>
-public sealed record FinalizeResult(ApiResult Response, Guid? RefundAttemptId, Guid ShowId, bool Confirmed = false);
+public sealed record FinalizeResult(ApiResult Response, Guid? RefundAttemptId, Guid ShowId, bool Confirmed = false,
+    int[]? ReleasedSeatNos = null);
 
 /// <summary>
 /// Payment saga, as database steps:
@@ -65,6 +66,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
 
             var deadline = SeatRules.PayDeadline(res.Status, res.HoldExpiresAt, res.PayDeadline, now, options.Value.PayGrace);
             var pinned = await CreatePinAsync(c, tx, res, caller, IdemScope.Confirm, key, deadline, now, hint);
+            await IdempotencyStore.LinkAsync(c, tx, caller, IdemScope.Confirm, key, res.Id);
             return new PinResult(null, pinned, res.ShowId);
         }, ct);
 
@@ -150,13 +152,14 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
             // Already finalized (by the live request or by recovery): answer what was stored.
             var stored = await IdempotencyStore.GetAsync(c, tx, attempt.IdemUser, attempt.IdemScope, attempt.IdemKey);
             return new FinalizeResult(stored?.ResponseStatus is { } ? IdempotencyStore.Replay(stored, stored.RequestHash) with { Replayed = false }
-                : IdempotencyStore.Processing(), null, res.ShowId);
+                : IdempotencyStore.Processing(res.Id), null, res.ShowId);
         }
 
         var fromReserve = attempt.IdemScope == IdemScope.Reserve;
         ApiResult response;
         Guid? refund = null;
         var confirmed = false;
+        int[] released = [];
 
         switch (outcome)
         {
@@ -183,7 +186,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
                 else
                 {
                     // Paid, but the pin lapsed and someone else claimed a seat: compensate.
-                    await ReleaseOwnedSeatsAsync(c, tx, res);
+                    released = await ReleaseOwnedSeatsAsync(c, tx, res);
                     await c.ExecuteAsync("UPDATE reservations SET status = 'refund_pending', updated_at = @now WHERE id = @id",
                         new { id = res.Id, now }, tx);
                     await SetAttemptAsync(c, tx, attempt.Id, "refund_pending", now, "seat_lost");
@@ -197,10 +200,19 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
                 if (fromReserve)
                 {
                     // Hold-and-pay in one call: no hold to fall back to, so the seats go straight back.
-                    await ReleaseOwnedSeatsAsync(c, tx, res);
+                    released = await ReleaseOwnedSeatsAsync(c, tx, res);
                     await c.ExecuteAsync("UPDATE reservations SET status = 'cancelled', updated_at = @now WHERE id = @id",
                         new { id = res.Id, now }, tx);
                     response = ApiResult.Fail(402, ErrorCodes.PaymentDeclined, "payment was declined; the seats were released");
+                }
+                else if (!(res.Status == ReservationStatus.PaymentPending && locked.OwnsAllSeats))
+                {
+                    // Declined, and the pin had already lapsed and been reclaimed: there is nothing left to retry.
+                    released = await ReleaseOwnedSeatsAsync(c, tx, res);
+                    await c.ExecuteAsync(
+                        "UPDATE reservations SET status = 'expired', updated_at = @now WHERE id = @id AND status IN ('held', 'payment_pending')",
+                        new { id = res.Id, now }, tx);
+                    response = HoldLost();
                 }
                 else
                 {
@@ -212,11 +224,11 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
 
             default: // Unknown: leave the pin in place; recovery asks the gateway later.
                 await SetAttemptAsync(c, tx, attempt.Id, "unknown", now);
-                return new FinalizeResult(IdempotencyStore.Processing(), null, res.ShowId);
+                return new FinalizeResult(IdempotencyStore.Processing(res.Id), null, res.ShowId);
         }
 
         await IdempotencyStore.StoreAsync(c, tx, attempt.IdemUser, attempt.IdemScope, attempt.IdemKey, response, res.Id);
-        return new FinalizeResult(response, refund, res.ShowId, confirmed);
+        return new FinalizeResult(response, refund, res.ShowId, confirmed, released);
     }, ct);
 
     /// <summary>Records a refund the gateway has confirmed. Lock order: reservation → attempt.</summary>

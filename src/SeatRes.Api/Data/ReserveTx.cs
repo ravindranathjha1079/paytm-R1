@@ -41,6 +41,8 @@ public sealed class ReserveTx(Db db, TimeProvider time, IOptions<SeatResOptions>
             await c.ExecuteAsync("ROLLBACK TO SAVEPOINT claim", transaction: tx);
         if (result.Pinned is null) // a pinned (hold-and-pay) request stores its response when payment finalizes
             await IdempotencyStore.StoreAsync(c, tx, cmd.UserId, IdemScope.Reserve, cmd.IdemKey, result.Response, result.ReservationId);
+        else
+            await IdempotencyStore.LinkAsync(c, tx, cmd.UserId, IdemScope.Reserve, cmd.IdemKey, result.ReservationId!.Value);
         return result;
     }, ct);
 

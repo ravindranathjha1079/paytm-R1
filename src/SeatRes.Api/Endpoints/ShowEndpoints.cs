@@ -12,7 +12,7 @@ public sealed record CountsDto(int Available, int Held, int Confirmed);
 public sealed record LedgerDto(long ChargedPaise, long RefundedPaise, long NetPaise, long ExpectedNetPaise);
 public sealed record ShowDto(
     Guid Id, string Name, long PricePaise, int PerUserLimit, int TotalSeats,
-    CountsDto Counts, bool Reconciled, LedgerDto Ledger, IReadOnlyList<SeatDto> Seats, DateTime ServerTime);
+    CountsDto Counts, bool Reconciled, LedgerDto Ledger, IReadOnlyList<SeatDto>? Seats, DateTime ServerTime);
 
 public static class ShowEndpoints
 {
@@ -30,13 +30,15 @@ public static class ShowEndpoints
             return ApiResult.Ok(ToDto(new ShowState(show, show.Labels.Select(l => new SeatView(l, "available")).ToList(), 0, 0), now), 201);
         }).RequireAuthorization(AuthSetup.AdminPolicy);
 
-        app.MapGet("/shows/{id:guid}", async (Guid id, ShowStore store, ShowCatalog catalog, TimeProvider time, CancellationToken ct) =>
+        app.MapGet("/shows/{id:guid}", async (Guid id, bool? seats, ShowStore store, ShowCatalog catalog, TimeProvider time,
+            CancellationToken ct) =>
         {
             var show = await catalog.GetAsync(id, ct);
             if (show is null) return ApiResult.Fail(404, ErrorCodes.NotFound, "show not found");
             var now = time.GetUtcNow().UtcDateTime;
-            return ApiResult.Ok(ToDto(await store.GetStateAsync(show, now, ct), now));
-        });
+            var dto = ToDto(await store.GetStateAsync(show, now, ct), now);
+            return ApiResult.Ok(seats == false ? dto with { Seats = null } : dto);
+        }).RequireRateLimiting(ServiceRegistration.ReadPolicy);
     }
 
     private static ApiResult? Validate(CreateShowRequest b, SeatResOptions opt)

@@ -63,6 +63,7 @@ public sealed class PaymentService(
 
         var final = await paymentTx.FinalizeAsync(pinned.AttemptId, outcome, CancellationToken.None);
         if (final.Confirmed) SeatResMetrics.Confirmed.WithLabels(final.ShowId.ToString()).Inc();
+        if (final.ReleasedSeatNos is { Length: > 0 } released) takenCache.Invalidate(final.ShowId, released);
         if (final.RefundAttemptId is { } refundAttempt)
             await RefundAsync(refundAttempt);
         return final.Response;

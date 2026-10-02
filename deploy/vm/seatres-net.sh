@@ -27,7 +27,9 @@ in_order() {
 }
 
 up() {
-  ip -4 addr show dev "$DEV" | grep -q "inet $IP/" || ip addr add "$IP/32" dev "$DEV"
+  # Earlier versions added a /24 (which also adds a subnet route); replace it with a /32.
+  if ip -4 addr show dev "$DEV" | grep -q "inet $IP/24"; then ip addr add "$IP/32" dev "$DEV"; ip addr del "$IP/24" dev "$DEV"; fi
+  ip -4 addr show dev "$DEV" | grep -q "inet $IP/32" || ip addr add "$IP/32" dev "$DEV"
   in_order && return 0   # nothing to repair: never churn rules that are already right
   remove_rules
   for pair in "${PAIRS[@]}"; do

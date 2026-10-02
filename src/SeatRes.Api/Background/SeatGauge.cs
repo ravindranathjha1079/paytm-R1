@@ -13,6 +13,9 @@ namespace SeatRes.Api.Background;
 public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
 {
     private static readonly string[] States = ["available", "held", "confirmed"];
+    /// <summary>Only shows created recently are exported, so the scrape stays cheap over a 10-day deployment.</summary>
+    public static readonly TimeSpan Window = TimeSpan.FromDays(2);
+    private HashSet<string> _exported = [];
     public const long Never = -1;
     private long _lastRefreshMs = Never;
     private int _registered;
@@ -39,18 +42,27 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
             var (rows, pending) = await db.Read(async (c, tx) =>
             {
                 var counts = (await c.QueryAsync<(string Show, string State, int N)>(new CommandDefinition(
-                    $"SELECT show_id::text, {SeatRules.EffectiveStatusSql}, count(*)::int FROM seats GROUP BY 1, 2",
-                    new { now }, tx, cancellationToken: cts.Token))).ToList();
+                    $"""
+                    SELECT show_id::text, {SeatRules.EffectiveStatusSql}, count(*)::int FROM seats
+                    WHERE show_id IN (SELECT id FROM shows WHERE created_at > @since)
+                    GROUP BY 1, 2
+                    """,
+                    new { now, since = now - Window }, tx, cancellationToken: cts.Token))).ToList();
                 var inFlight = await c.ExecuteScalarAsync<long>(new CommandDefinition(
                     "SELECT count(*) FROM payment_attempts WHERE status IN ('pending', 'unknown')", transaction: tx,
                     cancellationToken: cts.Token));
                 return (counts, inFlight);
             }, cts.Token);
 
-            foreach (var show in rows.Select(r => r.Show).Distinct())
+            var current = rows.Select(r => r.Show).ToHashSet();
+            foreach (var show in current)
                 foreach (var state in States)
                     SeatResMetrics.Seats.WithLabels(show, state)
                         .Set(rows.Where(r => r.Show == show && r.State == state).Sum(r => r.N));
+            foreach (var gone in _exported.Except(current))
+                foreach (var state in States)
+                    SeatResMetrics.Seats.RemoveLabelled(gone, state);
+            _exported = current;
             SeatResMetrics.PaymentPending.Set(pending);
             Interlocked.Exchange(ref _lastRefreshMs, Environment.TickCount64);
         }

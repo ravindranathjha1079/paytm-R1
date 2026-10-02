@@ -10,9 +10,11 @@ namespace SeatRes.Api.Payments;
 /// hint (X-Sim-Gateway: decline | unknown | slow) so a burst can drive every failure path on demand.
 /// "unknown" charges the card but loses the response; "slow" charges after our client timeout has fired.
 /// </summary>
-public sealed class SimulatedGateway(NpgsqlDataSource ds, IOptions<GatewayOptions> options, IOptions<SeatResOptions> seatres)
+public sealed class SimulatedGateway(GatewayDataSource gatewayDb, IOptions<GatewayOptions> options, IOptions<SeatResOptions> seatres)
     : IPaymentGateway
 {
+    private NpgsqlDataSource ds => gatewayDb.Source;
+
     public async Task<GatewayStatus> ChargeAsync(string key, long amountPaise, string? hint, CancellationToken ct)
     {
         var o = options.Value;
@@ -56,5 +58,23 @@ public sealed class SimulatedGateway(NpgsqlDataSource ds, IOptions<GatewayOption
         var rows = await c.ExecuteAsync(
             "UPDATE gateway_charges SET refunded = true WHERE gateway_key = @key AND status = 'succeeded'", new { key });
         return rows == 1;
+    }
+}
+
+/// <summary>
+/// The "external" provider gets its own small pool, as a real one would live elsewhere: payment calls can
+/// never queue behind (or starve) the reservation path's 30 connections.
+/// </summary>
+public sealed class GatewayDataSource(IConfiguration config) : IDisposable
+{
+    private readonly Lazy<NpgsqlDataSource> _source = new(() =>
+        new NpgsqlDataSourceBuilder(new NpgsqlConnectionStringBuilder(config.GetConnectionString("Db")) { MaxPoolSize = 5 }.ConnectionString)
+            .Build());
+
+    public NpgsqlDataSource Source => _source.Value;
+
+    public void Dispose()
+    {
+        if (_source.IsValueCreated) _source.Value.Dispose();
     }
 }
