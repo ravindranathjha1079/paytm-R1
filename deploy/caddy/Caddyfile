@@ -42,6 +42,11 @@ http://{$SEATRES_FQDN} {
 			lb_try_interval 250ms
 			# A POST can only be re-dialled if its body can be replayed; reserve/confirm bodies are tiny.
 			request_buffers 64KiB
+			# Requests already sent when a restarting API closed the connection may also be retried, but only on
+			# routes that are idempotent by design (reserve/confirm carry idempotency keys; cancel is idempotent).
+			lb_retry_match {
+				path /shows/*/reserve /reservations/*
+			}
 			transport http {
 				# Bounded upstream: excess requests queue here instead of opening thousands of connections.
 				max_conns_per_host 768
