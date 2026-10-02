@@ -123,7 +123,7 @@ detectable and compensated.
     the kernel.
   - Measured: 6 runners at once, about 10,500 concurrent TLS connections, 192,681 requests, **0 × 5xx and
     0 dropped**. Throughput is CPU-bound on this shared burstable VM: about 1,230 req/s combined (up from
-    about 920 after the holder-aware cache below). Latency under that much concurrency is queueing, not
+    about 920 before the exact memory-only declines in §2). Latency under that much concurrency is queueing, not
     failure.
 - **Restarts are invisible.** Kestrel drains in-flight requests on SIGTERM. The edge re-dials while the
   process is down and retries cut-off requests, but only on routes that are idempotent by design.
