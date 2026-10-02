@@ -183,12 +183,19 @@ def main() -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("setup"); s.add_argument("base_url"); s.add_argument("--shows", type=int, default=3)
     s.add_argument("--lead", type=int, default=150, help="seconds from now until the synchronised start")
-    f = sub.add_parser("fire"); f.add_argument("base_url"); f.add_argument("--show", required=True)
+    f = sub.add_parser("fire"); f.add_argument("base_url"); f.add_argument("--show")
+    f.add_argument("--plan", help="setup's JSON output; picks shows[shard % len] and start_at")
     f.add_argument("--shard", type=int, default=0); f.add_argument("--requests", type=int, default=5000)
     f.add_argument("--connections", type=int, default=60, help="HTTP/2 connections (each carries many streams)")
     f.add_argument("--start-at", type=float, default=0); f.add_argument("--out", default="shard.json")
     v = sub.add_parser("verify"); v.add_argument("base_url"); v.add_argument("files", nargs="+")
     args = p.parse_args()
+    if args.cmd == "fire" and args.plan:
+        plan = json.loads(args.plan)
+        args.show = args.show or plan["shows"][args.shard % len(plan["shows"])]
+        args.start_at = args.start_at or plan["start_at"]
+    if args.cmd == "fire" and not args.show:
+        p.error("fire needs --show or --plan")
     return asyncio.run({"setup": setup, "fire": fire, "verify": verify}[args.cmd](args))
 
 
