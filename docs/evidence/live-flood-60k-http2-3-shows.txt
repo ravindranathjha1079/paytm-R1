@@ -1,0 +1,19 @@
+12 shards, 3 shows; start spread 0.10s; sum of per-shard peak in-flight requests: 63000
+
+show 01a0fb76-a5d6-7764-bf0b-887ce41a32e9: 21000 requests from 4 shards (peak in flight 21000)
+  outcomes: {'200': 38, '201': 834, '409 per_user_limit': 11, '409 seat_taken': 20117}
+  seats won 988, overlapping grants 0; available 12 + held 988 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 36940 ms, p99 65164 ms, max 67685 ms
+
+show 01a0fb76-a6c9-7a0f-bcf1-fd171e4f7702: 21000 requests from 4 shards (peak in flight 21000)
+  outcomes: {'200': 40, '201': 843, '409 per_user_limit': 8, '409 seat_taken': 20109}
+  seats won 995, overlapping grants 0; available 5 + held 995 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 34848 ms, p99 64438 ms, max 67183 ms
+
+show 01a0fb76-a7b2-7f8d-b64e-add622eb7a60: 21000 requests from 4 shards (peak in flight 21000)
+  outcomes: {'200': 34, '201': 841, '409 per_user_limit': 8, '409 seat_taken': 20117}
+  seats won 984, overlapping grants 0; available 16 + held 984 + confirmed 0 = 1000 / 1000, reconciled True
+  latency p50 35767 ms, p99 64517 ms, max 67656 ms
+
+total 63000 requests
+ALL CHECKS PASSED

@@ -11,6 +11,10 @@ on:
       per_shard:
         description: Requests per runner (12 runners, 4 per show)
         default: "5000"
+      http1:
+        description: HTTP/1.1, one connection per request (otherwise HTTP/2 multiplexing)
+        type: boolean
+        default: false
 
 jobs:
   setup:
@@ -42,7 +46,7 @@ jobs:
       - name: Fire at the agreed second
         run: |
           python tools/burst/flood.py fire '${{ inputs.base_url }}' --plan '${{ needs.setup.outputs.plan }}' \
-            --shard ${{ matrix.shard }} --requests ${{ inputs.per_shard }} --out shard-${{ matrix.shard }}.json
+            --shard ${{ matrix.shard }} --requests ${{ inputs.per_shard }} --out shard-${{ matrix.shard }}.json             ${{ inputs.http1 && '--http1' || '' }}
       - uses: actions/upload-artifact@v4
         with: { name: "flood-shard-${{ matrix.shard }}", path: "shard-${{ matrix.shard }}.json" }
 

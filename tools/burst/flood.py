@@ -34,9 +34,9 @@ SEATS = [f"{r}{i}" for r in ROWS for i in range(1, PER_ROW + 1)]
 HOT = [f"C{i}" for i in range(1, 11)]
 
 
-def client(base: str, connections: int) -> httpx.AsyncClient:
+def client(base: str, connections: int, http2: bool = True) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url=base.rstrip("/"), http2=True,
+        base_url=base.rstrip("/"), http2=http2,
         limits=httpx.Limits(max_connections=connections, max_keepalive_connections=connections),
         timeout=httpx.Timeout(connect=30, read=240, write=60, pool=None))
 
@@ -67,7 +67,9 @@ async def fire(args) -> int:
 
     results: list[dict] = []
     inflight = peak = 0
-    async with client(args.base_url, args.connections) as c:
+    # HTTP/1.1 mode: one connection per in-flight request, i.e. as many concurrent TLS connections as requests.
+    connections = args.requests + args.requests // 20 if args.http1 else args.connections
+    async with client(args.base_url, connections, http2=not args.http1) as c:
         async def mint(u: int) -> str:
             for attempt in range(5):
                 try:
@@ -188,6 +190,7 @@ def main() -> int:
     f.add_argument("--shard", type=int, default=0); f.add_argument("--requests", type=int, default=5000)
     f.add_argument("--connections", type=int, default=60, help="HTTP/2 connections (each carries many streams)")
     f.add_argument("--start-at", type=float, default=0); f.add_argument("--out", default="shard.json")
+    f.add_argument("--http1", action="store_true", help="HTTP/1.1: a separate connection for every request")
     v = sub.add_parser("verify"); v.add_argument("base_url"); v.add_argument("files", nargs="+")
     args = p.parse_args()
     if args.cmd == "fire" and args.plan:
