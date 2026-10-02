@@ -10,6 +10,8 @@ public sealed class SeatResOptions
     public int PayGraceSeconds { get; set; } = 60;
     public int MaxSeatsPerShow { get; set; } = 20_000;
     public int MaxSeatsPerRequest { get; set; } = 64;
+    /// <summary>₹10 crore per seat: far above any real ticket, far below bigint overflow for a full request.</summary>
+    public long MaxPricePaise { get; set; } = 1_000_000_000_00;
 
     public bool FastPathEnabled { get; set; } = true;
     public int TakenCacheMillis { get; set; } = 1000;

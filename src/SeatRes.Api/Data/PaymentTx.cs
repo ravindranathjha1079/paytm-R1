@@ -23,7 +23,8 @@ public sealed record AttemptRow
 
 public sealed record PinResult(ApiResult? Response, PinnedPayment? Pinned, Guid? ShowId);
 
-public sealed record FinalizeResult(ApiResult Response, Guid? RefundAttemptId, Guid ShowId);
+/// <param name="Confirmed">True when this call confirmed the reservation; metrics are recorded by the caller after commit.</param>
+public sealed record FinalizeResult(ApiResult Response, Guid? RefundAttemptId, Guid ShowId, bool Confirmed = false);
 
 /// <summary>
 /// Payment saga, as database steps:
@@ -155,6 +156,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
         var fromReserve = attempt.IdemScope == IdemScope.Reserve;
         ApiResult response;
         Guid? refund = null;
+        var confirmed = false;
 
         switch (outcome)
         {
@@ -175,7 +177,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
                         "UPDATE reservations SET status = 'confirmed', hold_expires_at = NULL, pay_deadline = NULL, updated_at = @now WHERE id = @id",
                         new { id = res.Id, now }, tx);
                     await SetAttemptAsync(c, tx, attempt.Id, "succeeded", now);
-                    SeatResMetrics.Confirmed.WithLabels(res.ShowId.ToString()).Inc();
+                    confirmed = true;
                     response = ApiResult.Ok(ConfirmedDto(res, now), fromReserve ? 201 : 200);
                 }
                 else
@@ -214,7 +216,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
         }
 
         await IdempotencyStore.StoreAsync(c, tx, attempt.IdemUser, attempt.IdemScope, attempt.IdemKey, response, res.Id);
-        return new FinalizeResult(response, refund, res.ShowId);
+        return new FinalizeResult(response, refund, res.ShowId, confirmed);
     }, ct);
 
     /// <summary>Records a refund the gateway has confirmed. Lock order: reservation → attempt.</summary>
@@ -228,7 +230,8 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
             new { attemptId }, tx);
         if (attempt.Status != "refund_pending") return null;
 
-        await c.ExecuteAsync(
+        if (attempt.AmountPaise > 0)
+            await c.ExecuteAsync(
             """
             INSERT INTO payments (id, reservation_id, attempt_id, kind, amount_paise, gateway_ref, reason, created_at)
             VALUES (@id, @reservationId, @attemptId, 'refund', @amount, @gatewayRef, @reason, @now)
@@ -239,8 +242,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
         await SetAttemptAsync(c, tx, attemptId, "refunded", now, attempt.RefundReason);
         await c.ExecuteAsync("UPDATE reservations SET status = 'refunded', updated_at = @now WHERE id = @reservationId AND status = 'refund_pending'",
             new { reservationId, now }, tx);
-        SeatResMetrics.Refunds.WithLabels(attempt.RefundReason ?? "cancel").Inc();
-        return attempt.RefundReason;
+        return attempt.RefundReason ?? "cancel";
     }, ct);
 
     public async Task<AttemptRow?> GetAttemptAsync(Guid attemptId, CancellationToken ct)
@@ -250,8 +252,9 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
             new { attemptId });
     }
 
+    // A free show (amount 0) moves no money, so it gets no ledger rows; the invariant still holds (0 == 0).
     private static Task RecordChargeAsync(NpgsqlConnection c, NpgsqlTransaction tx, AttemptRow attempt, DateTime now) =>
-        c.ExecuteAsync(
+        attempt.AmountPaise == 0 ? Task.CompletedTask : c.ExecuteAsync(
             """
             INSERT INTO payments (id, reservation_id, attempt_id, kind, amount_paise, gateway_ref, created_at)
             VALUES (@id, @reservationId, @attemptId, 'charge', @amount, @gatewayRef, @now)

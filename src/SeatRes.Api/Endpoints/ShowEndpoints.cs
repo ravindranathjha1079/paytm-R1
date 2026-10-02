@@ -43,8 +43,8 @@ public static class ShowEndpoints
     {
         if (string.IsNullOrWhiteSpace(b.Name) || b.Name.Length > 100)
             return Bad("name is required (at most 100 characters)");
-        if (b.PricePaise is not { } price || price < 0)
-            return Bad("price_paise is required and must be a non-negative integer");
+        if (b.PricePaise is not { } price || price < 0 || price > opt.MaxPricePaise)
+            return Bad($"price_paise is required: an integer between 0 and {opt.MaxPricePaise}");
         if (b.PerUserLimit is <= 0)
             return Bad("per_user_limit must be positive");
         if (b.Seats is not { Length: > 0 } seats || seats.Length > opt.MaxSeatsPerShow)

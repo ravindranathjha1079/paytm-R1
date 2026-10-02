@@ -38,6 +38,7 @@ public sealed class PaymentRecovery(
                 continue; // the charge may still be in flight at the provider
             var final = await paymentTx.FinalizeAsync(attempt.Id,
                 outcome == GatewayStatus.NotFound ? GatewayStatus.Declined : outcome, ct);
+            if (final.Confirmed) Observability.SeatResMetrics.Confirmed.WithLabels(final.ShowId.ToString()).Inc();
             log.LogInformation("{event} {gateway_key} {outcome} {status_code}", "recovery.finalized",
                 attempt.GatewayKey, outcome, final.Response.StatusCode);
             if (final.RefundAttemptId is { } refund) await payments.RefundAsync(refund);

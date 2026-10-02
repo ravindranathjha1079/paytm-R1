@@ -133,6 +133,10 @@ class Report:
     def add(self, name: str, tally: Tally, notes: list[str], violations: list[str]) -> None:
         if tally.server_errors:
             violations.append(f"{tally.server_errors} server errors (5xx)")
+        dropped = tally.counts.get("transport-error", 0)
+        if dropped:
+            violations.append(f"{dropped} requests got no HTTP response (reset/timeout) - "
+                              "check whether the client or the service dropped them")
         self.sections.append((name, tally, notes))
         self.violations.extend(f"[{name}] {v}" for v in violations)
         mark = "FAIL" if violations else "ok"
@@ -375,7 +379,12 @@ def parse_metrics(text: str) -> dict[str, float]:
     return out
 
 
-async def reconcile(api: Api, show: str, confirmations: int) -> tuple[list[str], list[str]]:
+async def scrape(api: Api) -> dict[str, float]:
+    async with api.session.get(api.base + "/metrics") as r:
+        return parse_metrics(await r.text())
+
+
+async def reconcile(api: Api, show: str, confirmations: int, unhandled_before: float) -> tuple[list[str], list[str]]:
     notes, bad = [], []
     await asyncio.sleep(1.5)  # the seat gauge refreshes at most once a second
     _, state = await api.call("GET", f"/shows/{show}")
@@ -391,8 +400,7 @@ async def reconcile(api: Api, show: str, confirmations: int) -> tuple[list[str],
     if ledger["net_paise"] != ledger["expected_net_paise"]:
         bad.append("ledger does not match confirmed seats")
 
-    async with api.session.get(api.base + "/metrics") as r:
-        m = parse_metrics(await r.text())
+    m = await scrape(api)
     for st in ("available", "held", "confirmed"):
         metric = m.get(f'seatres_seats{{show="{show}",state="{st}"}}')
         if metric is None or int(metric) != c[st]:
@@ -401,8 +409,14 @@ async def reconcile(api: Api, show: str, confirmations: int) -> tuple[list[str],
     notes.append(f"/metrics: seats gauge matches API; confirmed counter {int(counter)} (this run confirmed {confirmations})")
     if int(counter) != confirmations:
         bad.append(f"confirmed counter {counter} != confirmations observed {confirmations}")
-    if m.get("seatres_unhandled_errors_total", 0) > 0:
-        notes.append(f"note: service has logged {int(m['seatres_unhandled_errors_total'])} unhandled errors since start")
+    unhandled = m.get("seatres_unhandled_errors_total", 0) - unhandled_before
+    notes.append(f"/metrics: unhandled errors during this run: {int(unhandled)}")
+    if unhandled > 0:
+        bad.append(f"service recorded {int(unhandled)} unhandled errors during the run")
+    for check in ("seats", "ledger"):
+        ok = m.get(f'seatres_reconciliation_ok{{check="{check}"}}')
+        if ok is not None and ok < 1:
+            bad.append(f"service reconciler reports {check} invariant violated")
     return notes, bad
 
 
@@ -435,6 +449,7 @@ async def main(args) -> int:
             print(f"create show failed: {status} {show_body}")
             return 1
         show = show_body["id"]
+        unhandled_before = (await scrape(api)).get("seatres_unhandled_errors_total", 0)
         print(f"show {show}: {len(seats)} seats, price 25000 paise, per_user_limit 4\n")
 
         report = Report()
@@ -460,7 +475,7 @@ async def main(args) -> int:
         if args.overload:
             report.add("overload", *await overload(api, show, args.overload, run))
 
-        notes, bad = await reconcile(api, show, confirmations)
+        notes, bad = await reconcile(api, show, confirmations, unhandled_before)
         print("\nreconciliation")
         for n in notes:
             print(f"  {n}")

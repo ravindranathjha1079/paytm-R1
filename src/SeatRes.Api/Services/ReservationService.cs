@@ -61,8 +61,11 @@ public sealed class ReservationService(
                 : outcomes.Record("reserve", gated, userId, show.Id, null, labels, layer: "gate");
         }
 
+        // Metrics only after the transaction committed, so a retried transaction is never counted twice.
         if (result!.Response.StatusCode == 201 && !result.Response.Replayed)
             SeatResMetrics.HoldsCreated.WithLabels(show.Id.ToString()).Inc();
+        if (result.ReclaimedHolds > 0)
+            SeatResMetrics.HoldsReclaimed.WithLabels(show.Id.ToString()).Inc(result.ReclaimedHolds);
 
         var response = result.Pinned is null ? result.Response : await payments.RunAsync(result.Pinned);
         return outcomes.Record("reserve", response, userId, show.Id, result.ReservationId, labels);

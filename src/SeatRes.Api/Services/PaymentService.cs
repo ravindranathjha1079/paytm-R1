@@ -62,6 +62,7 @@ public sealed class PaymentService(
         log.LogInformation("{event} {gateway_key} {outcome}", "gateway.charge", pinned.GatewayKey, outcome);
 
         var final = await paymentTx.FinalizeAsync(pinned.AttemptId, outcome, CancellationToken.None);
+        if (final.Confirmed) SeatResMetrics.Confirmed.WithLabels(final.ShowId.ToString()).Inc();
         if (final.RefundAttemptId is { } refundAttempt)
             await RefundAsync(refundAttempt);
         return final.Response;
@@ -87,6 +88,7 @@ public sealed class PaymentService(
             return false;
         }
         var reason = await paymentTx.MarkRefundedAsync(attemptId, CancellationToken.None);
+        if (reason is not null) SeatResMetrics.Refunds.WithLabels(reason).Inc();
         log.LogInformation("{event} {gateway_key} {reason}", "refund.issued", attempt.GatewayKey, reason);
         return true;
     }

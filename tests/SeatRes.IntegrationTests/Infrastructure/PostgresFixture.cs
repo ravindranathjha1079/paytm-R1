@@ -12,8 +12,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private DbApiFactory? _api;
     private DbApiFactory? _fastApi;
 
-    public static PostgreSqlContainer NewContainer() => new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
+    public static PostgreSqlContainer NewContainer() => new PostgreSqlBuilder("postgres:16-alpine")
         .WithCommand("-c", "max_connections=200")
         .Build();
 
