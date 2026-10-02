@@ -1,26 +1,46 @@
 name: live-burst
 
-# Runs the burst from a GitHub-hosted runner against the deployed service (manual trigger).
+# Runs the burst from GitHub-hosted runners against the deployed service (manual trigger).
+# Several shards run at once from different source IPs, so the combined concurrency is not capped by one
+# client's NAT/TLS limits. Each shard creates its own show and checks every invariant on it.
 on:
   workflow_dispatch:
     inputs:
       base_url:
         description: Service URL
         default: https://seatres-paytm.centralindia.cloudapp.azure.com
+      shards:
+        description: Parallel runners (1-6)
+        default: "1"
       args:
-        description: Extra burst.py arguments
+        description: Extra burst.py arguments (per shard)
         default: --workers 4 --concurrency 200
 
 jobs:
   burst:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Skip shards beyond the requested count
+        id: gate
+        run: echo "run=${{ matrix.shard <= fromJSON(inputs.shards) }}" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Burst
+      - if: steps.gate.outputs.run == 'true'
+        name: Burst
         env:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
-        run: ./burst.sh "${{ inputs.base_url }}" ${{ inputs.args }}
+        run: ./burst.sh "${{ inputs.base_url }}" ${{ inputs.args }} | tee burst-shard-${{ matrix.shard }}.txt
+      - if: steps.gate.outputs.run == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: burst-shard-${{ matrix.shard }}
+          path: burst-shard-${{ matrix.shard }}.txt
