@@ -40,6 +40,8 @@ http://{$SEATRES_FQDN} {
 			# this is always safe) instead of answering 502.
 			lb_try_duration 15s
 			lb_try_interval 250ms
+			# A POST can only be re-dialled if its body can be replayed; reserve/confirm bodies are tiny.
+			request_buffers 64KiB
 			transport http {
 				# Bounded upstream: excess requests queue here instead of opening thousands of connections.
 				max_conns_per_host 768
