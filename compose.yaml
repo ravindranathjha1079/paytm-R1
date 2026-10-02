@@ -36,6 +36,7 @@ services:
     # Deliberately not "service_healthy": the API must come up on its own and report not-ready until the DB is there.
     depends_on: [postgres]
     ulimits: { nofile: { soft: 65535, hard: 65535 } }
+    stop_grace_period: 25s
     deploy: { resources: { limits: { cpus: "1.2", memory: 768M } } }
     restart: unless-stopped
     logging: *logging

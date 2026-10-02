@@ -29,6 +29,8 @@ public static class ServiceRegistration
         services.AddOptions<AuthOptions>().Bind(config.GetSection(AuthOptions.Section));
         services.AddOptions<GatewayOptions>().Bind(config.GetSection(GatewayOptions.Section));
         services.AddSingleton(TimeProvider.System);
+        // On SIGTERM, stop accepting and let in-flight requests (including payments) finish.
+        services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(20));
 
         services.AddSingleton(sp =>
         {

@@ -36,6 +36,10 @@ http://{$SEATRES_FQDN} {
 
 	handle {
 		reverse_proxy {$API_UPSTREAM:127.0.0.1:8080} {
+			# While the API restarts or redeploys, keep retrying the *dial* (the request was never sent, so
+			# this is always safe) instead of answering 502.
+			lb_try_duration 15s
+			lb_try_interval 250ms
 			transport http {
 				# Bounded upstream: excess requests queue here instead of opening thousands of connections.
 				max_conns_per_host 768

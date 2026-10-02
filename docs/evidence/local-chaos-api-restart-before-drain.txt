@@ -1,0 +1,34 @@
+
+[notice] A new release of pip is available: 24.2 -> 26.2.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+seatres burst b735a41 -> http://localhost:8080
+show 01a0fa2c-34dd-792b-958c-db1d0d6f9a07: 1000 seats, price 25000 paise, per_user_limit 4
+
+  stampede           FAIL   15770 requests  200: 25, 201: 674, 409 per_user_limit: 6, 409 seat_taken: 13431, transport-error: 1634
+                          15770 requests in 27.8s (567 req/s), 770 concurrent duplicate retries, 797 seats won, 0 re-granted after an expired hold
+                          !! 1634 requests got no HTTP response (reset/timeout) - check whether the client or the service dropped them
+  payments           ok         8 requests  200: 4, 201: 3, 402 payment_declined: 1
+                          confirm 200, replay 200, hold+pay 201, cancel->refund 200, decline 402, retry 200
+
+reconciliation
+  available 201 + held 797 + confirmed 2 = 1000 (total_seats 1000)
+  ledger: charged 100000 - refunded 50000 = 50000 paise (expected 50000)
+  /metrics: seats gauge matches API; confirmed counter 3 (this run confirmed 3)
+  /metrics: unhandled errors during this run: 0
+
+outcome distribution (all scenarios)
+  200                                      29
+  201                                     677
+  402 payment_declined                      1
+  409 per_user_limit                        6
+  409 seat_taken                        13431
+  transport-error                        1634
+  5xx                                       0
+
+client-side transport errors (never reached a response; often the load generator itself)
+      1634  Server disconnected
+
+latency  p50 1507 ms   p99 3177 ms   max 4942 ms   mean 1561 ms
+
+VIOLATIONS
+  [stampede] 1634 requests got no HTTP response (reset/timeout) - check whether the client or the service dropped them
