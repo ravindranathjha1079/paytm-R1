@@ -212,6 +212,5 @@ I can explain and extend every part of it; the places I would extend first are b
    row and keeps groups together — the schema keeps `seat_no` order to make this a single locked query.
 2. Suggested alternative seats in the 409 body.
 3. Multiple replicas behind a load balancer with PgBouncer, and a shared (or no) taken-seat cache.
-4. A real payment gateway behind `IPaymentGateway`, with webhooks feeding the same finalize step.
-5. A virtual waiting room for the on-sale moment.
-6. Alert rules shipped as code (Prometheus/Grafana alerting) rather than only documented.
+4. A virtual waiting room for the on-sale moment.
+5. Alert rules shipped as code (Prometheus/Grafana alerting) rather than only documented.
