@@ -58,6 +58,9 @@ if docker network inspect seatres_default >/dev/null 2>&1 &&    [ "$(docker netw
 fi
 docker compose -f compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d --build --remove-orphans
 docker image prune -f --filter "label=com.docker.compose.project=seatres" >/dev/null || true
+# Pick up config changes without dropping connections: Caddy reloads gracefully, Prometheus on SIGHUP.
+docker exec seatres-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force >/dev/null 2>&1 || true
+docker kill -s HUP seatres-prometheus-1 >/dev/null 2>&1 || true
 
 for _ in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:8080/health/ready >/dev/null; then break; fi

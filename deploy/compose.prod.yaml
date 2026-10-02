@@ -46,7 +46,8 @@ services:
       # Thousands of concurrent TLS connections: let the Go GC work hard well before the cgroup limit.
       GOMEMLIMIT: 760MiB
     volumes:
-      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Directory mount: a single-file bind mount keeps serving the old file after git replaces it.
+      - ./deploy/caddy:/etc/caddy:ro
       - caddydata:/data
       - caddyconfig:/config
     # ~57 KB per TLS connection measured: 896M is ~13k concurrent connections; seatres-net caps at 12k.
