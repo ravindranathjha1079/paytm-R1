@@ -1,0 +1,67 @@
+name: flood
+
+# 12 runners fire their reserve requests at the same second over HTTP/2: 3 shows x 20,000 = 60,000 requests in
+# flight at once. A final job merges every runner's results and checks each show's invariants.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Service URL
+        default: https://seatres-paytm.centralindia.cloudapp.azure.com
+      per_shard:
+        description: Requests per runner (12 runners, 4 per show)
+        default: "5000"
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q "httpx[http2]>=0.27"
+      - id: plan
+        env: { ADMIN_KEY: "${{ secrets.ADMIN_KEY }}" }
+        run: echo "plan=$(python tools/burst/flood.py setup '${{ inputs.base_url }}' --shows 3 --lead 180)" >> "$GITHUB_OUTPUT"
+
+  fire:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q "httpx[http2]>=0.27"
+      - name: Fire at the agreed second
+        run: |
+          python tools/burst/flood.py fire '${{ inputs.base_url }}' \
+            --show '${{ fromJSON(needs.setup.outputs.plan).shows[matrix.shard % 3] }}' \
+            --shard ${{ matrix.shard }} --requests ${{ inputs.per_shard }} \
+            --start-at ${{ fromJSON(needs.setup.outputs.plan).start_at }} --out shard-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with: { name: "flood-shard-${{ matrix.shard }}", path: "shard-${{ matrix.shard }}.json" }
+
+  verify:
+    needs: fire
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q "httpx[http2]>=0.27"
+      - uses: actions/download-artifact@v4
+        with: { path: shards, merge-multiple: true }
+      - run: |
+          set -o pipefail
+          python tools/burst/flood.py verify '${{ inputs.base_url }}' shards/*.json | tee flood-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: flood-report, path: flood-report.txt }

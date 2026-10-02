@@ -1,1 +1,2 @@
 aiohttp>=3.9,<4
+httpx[http2]>=0.27
