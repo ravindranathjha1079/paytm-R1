@@ -1,12 +1,12 @@
-seatres burst bd6def1 -> https://seatres-paytm.centralindia.cloudapp.azure.com
-show 01a0fa3c-fafb-79b3-bcc8-a0bc67f345c2: 1000 seats, price 25000 paise, per_user_limit 4
+seatres burst b9f341b -> https://seatres-paytm.centralindia.cloudapp.azure.com
+show 01a0fa4e-f33d-75c1-8715-e37cf045bf3f: 1000 seats, price 25000 paise, per_user_limit 4
 
   hot-seat           ok       500 requests  201: 1, 409 seat_taken: 499
                           500 users -> seat A1: 1 x 201, 499 x 409 seat_taken
   group-overlap      ok        48 requests  201: 16, 409 seat_taken: 32
                           16 trials of [3-seat group x2] vs [1 seat]: 0 split groups
-  stampede           ok     31471 requests  200: 40, 201: 685, 409 per_user_limit: 5, 409 seat_taken: 30741
-                          31471 requests in 141.8s (222 req/s), 1471 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
+  stampede           ok     31500 requests  200: 46, 201: 687, 409 per_user_limit: 6, 409 seat_taken: 30761
+                          31500 requests in 143.4s (220 req/s), 1500 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
   idempotency        ok        51 requests  200: 49, 201: 1, 409 idempotency_mismatch: 1
                           same key x50 concurrently: 1 x 201, 49 x 200 replay, 1 distinct reservation
                           same key, different seats: 409 idempotency_mismatch
@@ -24,15 +24,15 @@ reconciliation
   /metrics: unhandled errors during this run: 0
 
 outcome distribution (all scenarios)
-  200                                      93
-  201                                     711
+  200                                      99
+  201                                     713
   402 payment_declined                      1
   404 not_found                             3
   409 idempotency_mismatch                  1
-  409 per_user_limit                       11
-  409 seat_taken                        31272
+  409 per_user_limit                       12
+  409 seat_taken                        31292
   5xx                                       0
 
-latency  p50 2979 ms   p99 9212 ms   max 10416 ms   mean 4505 ms
+latency  p50 5079 ms   p99 8395 ms   max 9094 ms   mean 5337 ms
 
 ALL CHECKS PASSED

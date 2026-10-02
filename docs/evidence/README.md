@@ -6,7 +6,7 @@ to two reservations whose holds overlap, or any reconciliation mismatch.
 
 | File | What was run | Outcome |
 |---|---|---|
-| `live-6-shards-shard-{1..6}.txt` | 6 GitHub runners at once (`live-burst.yml`, `shards=6`, `--workers 4 --concurrency 350 --stampede 30000`): about 10,500 concurrent TLS connections | 192,559 requests in total, about 1,230 req/s combined; **0 × 5xx, 0 dropped**. Each shard: 500-user hot seat → exactly 1 × 201 + 499 × 409; idempotency, per-user limit, spoofing and payments all pass; counts, ledger and `/metrics` reconcile |
+| `live-6-shards-shard-{1..6}.txt` | 6 GitHub runners at once (`live-burst.yml`, `shards=6`, `--workers 4 --concurrency 350 --stampede 30000`): about 10,500 concurrent TLS connections | 192,739 requests in total, about 1,470 req/s combined; **0 × 5xx, 0 dropped**. Each shard: 500-user hot seat → exactly 1 × 201 + 499 × 409; idempotency, per-user limit, spoofing and payments all pass; counts, ledger and `/metrics` reconcile |
 | `live-api-restart-mid-burst.txt` | 42k-request burst from one client; `docker restart seatres-api-1` on the VM 30 s in | **0 × 5xx, 0 dropped** while the API process restarted: Kestrel drains in-flight requests, the edge re-dials and retries idempotent routes; invariants hold |
 | `local-chaos-api-restart-before-drain.txt` | Same chaos test locally, *before* graceful drain and edge retries existed | About 1,600 requests cut off by the restart, but **no seat double-granted** and the ledger exact. Correctness never depended on process memory; the later fixes removed the visible errors |
 | `live-laptop-burst.txt` | First live run, from a laptop (single process, 800 connections) | All checks pass; 21k requests, 0 × 5xx |
@@ -22,6 +22,6 @@ to two reservations whose holds overlap, or any reconciliation mismatch.
   queue at the edge.
 - **One client is not a load test.** A single source IP tops out at about 1k connections (NAT/SNAT, TLS in
   Python). Multi-runner shards were needed to reach about 10k.
-- **Throughput on this VM is CPU-bound.** It was about 920 req/s, and about 1,230 req/s after declines for never-used keys stopped touching the database (exact memory-only declines). It is a 2-vCPU burstable machine shared
+- **Throughput on this VM is CPU-bound.** It was about 920 req/s, and about 1,470 req/s after the edge fixes and declines for never-used keys stopped touching the database (exact memory-only declines). It is a 2-vCPU burstable machine shared
   with three other apps. The p50 under 8,400 in-flight requests is queueing time, not errors. seatres
   containers run at reduced CPU weight so the other apps win contention.

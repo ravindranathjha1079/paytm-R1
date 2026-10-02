@@ -1,9 +1,9 @@
 
-seatres burst b313cb6 -> https://seatres-paytm.centralindia.cloudapp.azure.com
-show 01a0fa36-811b-763c-94cc-2cd76c70a7de: 1000 seats, price 25000 paise, per_user_limit 4
+seatres burst b8ecfab -> https://seatres-paytm.centralindia.cloudapp.azure.com
+show 01a0fa52-857a-7191-a3a5-ee3724479e6a: 1000 seats, price 25000 paise, per_user_limit 4
 
-  stampede           ok     41987 requests  200: 35, 201: 679, 409 per_user_limit: 1, 409 seat_taken: 41272
-                          41987 requests in 68.1s (616 req/s), 1987 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
+  stampede           ok     42016 requests  200: 36, 201: 688, 409 seat_taken: 41292
+                          42016 requests in 66.5s (632 req/s), 2016 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
   idempotency        ok        51 requests  200: 49, 201: 1, 409 idempotency_mismatch: 1
                           same key x50 concurrently: 1 x 201, 49 x 200 replay, 1 distinct reservation
                           same key, different seats: 409 idempotency_mismatch
@@ -17,14 +17,13 @@ reconciliation
   /metrics: unhandled errors during this run: 0
 
 outcome distribution (all scenarios)
-  200                                      88
-  201                                     683
+  200                                      89
+  201                                     692
   402 payment_declined                      1
   409 idempotency_mismatch                  1
-  409 per_user_limit                        1
-  409 seat_taken                        41272
+  409 seat_taken                        41292
   5xx                                       0
 
-latency  p50 448 ms   p99 1826 ms   max 4018 ms   mean 550 ms
+latency  p50 339 ms   p99 2053 ms   max 7395 ms   mean 526 ms
 
 ALL CHECKS PASSED

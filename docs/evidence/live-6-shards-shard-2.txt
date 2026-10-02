@@ -1,12 +1,12 @@
-seatres burst ba316a6 -> https://seatres-paytm.centralindia.cloudapp.azure.com
-show 01a0fa3c-f8db-7a48-a8d3-db206b68c6db: 1000 seats, price 25000 paise, per_user_limit 4
+seatres burst b86c674 -> https://seatres-paytm.centralindia.cloudapp.azure.com
+show 01a0fa4e-efc8-7cb1-8350-4d622c1d6153: 1000 seats, price 25000 paise, per_user_limit 4
 
   hot-seat           ok       500 requests  201: 1, 409 seat_taken: 499
                           500 users -> seat A1: 1 x 201, 499 x 409 seat_taken
   group-overlap      ok        48 requests  201: 16, 409 seat_taken: 32
                           16 trials of [3-seat group x2] vs [1 seat]: 0 split groups
-  stampede           ok     31488 requests  200: 26, 201: 684, 409 per_user_limit: 5, 409 seat_taken: 30773
-                          31488 requests in 141.8s (222 req/s), 1488 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
+  stampede           ok     31542 requests  200: 30, 201: 699, 409 per_user_limit: 2, 409 seat_taken: 30811
+                          31542 requests in 121.3s (260 req/s), 1542 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
   idempotency        ok        51 requests  200: 49, 201: 1, 409 idempotency_mismatch: 1
                           same key x50 concurrently: 1 x 201, 49 x 200 replay, 1 distinct reservation
                           same key, different seats: 409 idempotency_mismatch
@@ -18,21 +18,21 @@ show 01a0fa3c-f8db-7a48-a8d3-db206b68c6db: 1000 seats, price 25000 paise, per_us
                           confirm 200, replay 200, hold+pay 201, cancel->refund 200, decline 402, retry 200
 
 reconciliation
-  available 137 + held 861 + confirmed 2 = 1000 (total_seats 1000)
+  available 141 + held 857 + confirmed 2 = 1000 (total_seats 1000)
   ledger: charged 100000 - refunded 50000 = 50000 paise (expected 50000)
   /metrics: seats gauge matches API; confirmed counter 3 (this run confirmed 3)
   /metrics: unhandled errors during this run: 0
 
 outcome distribution (all scenarios)
-  200                                      79
-  201                                     710
+  200                                      83
+  201                                     725
   402 payment_declined                      1
   404 not_found                             3
   409 idempotency_mismatch                  1
-  409 per_user_limit                       11
-  409 seat_taken                        31304
+  409 per_user_limit                        8
+  409 seat_taken                        31342
   5xx                                       0
 
-latency  p50 2706 ms   p99 8726 ms   max 10211 ms   mean 4457 ms
+latency  p50 4748 ms   p99 8102 ms   max 9206 ms   mean 4761 ms
 
 ALL CHECKS PASSED

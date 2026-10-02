@@ -69,7 +69,7 @@ Postgres still picks the single winner. The whole decision path is tested with t
   database would have said. Any key that may have been used (a winning retry, a reused key with a different
   body, a retry after a cancel and re-grant, a key from before a restart) still goes to the database for its
   replay or `idempotency_mismatch`. A fingerprint collision only costs an extra read. Live throughput went
-  up 34%. (An earlier "the holder can't be you" heuristic had real edge cases; a reviewer found them and this
+  up about 60% overall (with the edge fixes). (An earlier "the holder can't be you" heuristic had real edge cases; a reviewer found them and this
   replaced it.) The set is per process: with several replicas it would need to be shared, or the fast path
   switched off.
 
@@ -122,7 +122,7 @@ detectable and compensated.
     API container directly, with a bounded upstream pool, so excess requests queue at the edge, not in
     the kernel.
   - Measured: 6 runners at once, about 10,500 concurrent TLS connections, 192,681 requests, **0 × 5xx and
-    0 dropped**. Throughput is CPU-bound on this shared burstable VM: about 1,230 req/s combined (up from
+    0 dropped**. Throughput is CPU-bound on this shared burstable VM: about 1,470 req/s combined (up from
     about 920 before the exact memory-only declines in §2). Latency under that much concurrency is queueing, not
     failure.
 - **Restarts are invisible.** Kestrel drains in-flight requests on SIGTERM. The edge re-dials while the
@@ -157,7 +157,7 @@ Sustained 429s are a capacity-planning signal, not a page.
 |---|---|---|
 | Integration suite (real Postgres, in-memory layer off) | 150 tests | all pass; includes 500-on-one-seat, overlapping groups ×20, limit storms, payment races |
 | Live, GitHub runner, `--workers 4 --concurrency 200 --stampede 40000 --overload 30000` | 72,600+ | 0 × 5xx, 0 transport errors; hot seat 1 × 201 + 499 × 409; reconciliation, ledger and `/metrics` all match; p50 650 ms, p99 1.45 s (client is ~200 ms RTT away) |
-| Live, 6 runners at once (~10,500 concurrent TLS connections) | 192,559 | 0 × 5xx, 0 dropped; every shard's hot seat had exactly one winner |
+| Live, 6 runners at once (~10,500 concurrent TLS connections) | 192,739 | 0 × 5xx, 0 dropped; every shard's hot seat had exactly one winner |
 | Live, API container restarted mid-burst | 41,987 | 0 × 5xx, 0 dropped; invariants exact |
 
 Single-source bursts top out around 700–900 req/s because of the client side (one source IP's NAT ports

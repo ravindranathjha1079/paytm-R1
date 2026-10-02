@@ -1,12 +1,12 @@
-seatres burst b015aaa -> https://seatres-paytm.centralindia.cloudapp.azure.com
-show 01a0fa3c-f058-7064-9f30-ea5a55cbccce: 1000 seats, price 25000 paise, per_user_limit 4
+seatres burst b53eae3 -> https://seatres-paytm.centralindia.cloudapp.azure.com
+show 01a0fa4e-e976-737e-a53a-6e82c97074cb: 1000 seats, price 25000 paise, per_user_limit 4
 
   hot-seat           ok       500 requests  201: 1, 409 seat_taken: 499
                           500 users -> seat A1: 1 x 201, 499 x 409 seat_taken
   group-overlap      ok        48 requests  201: 16, 409 seat_taken: 32
                           16 trials of [3-seat group x2] vs [1 seat]: 0 split groups
-  stampede           ok     31500 requests  200: 32, 201: 701, 409 per_user_limit: 3, 409 seat_taken: 30764
-                          31500 requests in 162.3s (194 req/s), 1500 concurrent duplicate retries, 810 seats won, 0 re-granted after an expired hold
+  stampede           ok     31473 requests  200: 38, 201: 701, 409 seat_taken: 30734
+                          31473 requests in 121.5s (259 req/s), 1473 concurrent duplicate retries, 809 seats won, 0 re-granted after an expired hold
   idempotency        ok        51 requests  200: 49, 201: 1, 409 idempotency_mismatch: 1
                           same key x50 concurrently: 1 x 201, 49 x 200 replay, 1 distinct reservation
                           same key, different seats: 409 idempotency_mismatch
@@ -18,21 +18,21 @@ show 01a0fa3c-f058-7064-9f30-ea5a55cbccce: 1000 seats, price 25000 paise, per_us
                           confirm 200, replay 200, hold+pay 201, cancel->refund 200, decline 402, retry 200
 
 reconciliation
-  available 143 + held 855 + confirmed 2 = 1000 (total_seats 1000)
+  available 152 + held 846 + confirmed 2 = 1000 (total_seats 1000)
   ledger: charged 100000 - refunded 50000 = 50000 paise (expected 50000)
   /metrics: seats gauge matches API; confirmed counter 3 (this run confirmed 3)
   /metrics: unhandled errors during this run: 0
 
 outcome distribution (all scenarios)
-  200                                      85
+  200                                      91
   201                                     727
   402 payment_declined                      1
   404 not_found                             3
   409 idempotency_mismatch                  1
-  409 per_user_limit                        9
-  409 seat_taken                        31295
+  409 per_user_limit                        6
+  409 seat_taken                        31265
   5xx                                       0
 
-latency  p50 6321 ms   p99 9065 ms   max 9899 ms   mean 6195 ms
+latency  p50 4624 ms   p99 8121 ms   max 9052 ms   mean 4672 ms
 
 ALL CHECKS PASSED
