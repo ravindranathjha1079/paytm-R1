@@ -213,4 +213,4 @@ I can explain and extend every part of it; the places I would extend first are b
 2. Suggested alternative seats in the 409 body.
 3. Multiple replicas behind a load balancer with PgBouncer, and a shared (or no) taken-seat cache.
 4. A virtual waiting room for the on-sale moment.
-5. Alert rules shipped as code (Prometheus/Grafana alerting) rather than only documented.
+5. Route the alert rules (already live in Prometheus) to an on-call channel: Alertmanager to Slack or PagerDuty.
