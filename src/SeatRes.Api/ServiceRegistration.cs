@@ -109,15 +109,27 @@ public static class ServiceRegistration
         app.UseSerilogRequestLogging(o =>
         {
             o.MessageTemplate = "http {RequestMethod} {RequestPath} {StatusCode} {Elapsed:0.0}ms";
-            o.GetLevel = (ctx, _, ex) => ex is not null || ctx.Response.StatusCode >= 500
-                ? LogEventLevel.Error
-                : LogEventLevel.Information;
+            o.GetLevel = (ctx, _, ex) => RequestLogLevel(ctx.Request.Path, ctx.Response.StatusCode, ex);
         });
         app.UseMiddleware<ErrorHandlingMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
         return app;
+    }
+
+    /// <summary>
+    /// Domain routes already emit one structured outcome line per decision, and health/metrics are polled
+    /// constantly, so their per-request access line is dropped (it doubled log volume under a burst).
+    /// Failures are always logged.
+    /// </summary>
+    internal static LogEventLevel RequestLogLevel(PathString path, int status, Exception? ex)
+    {
+        if (ex is not null || status >= 500) return LogEventLevel.Error;
+        var quiet = path.StartsWithSegments("/shows") || path.StartsWithSegments("/reservations")
+                    || path.StartsWithSegments("/health") || path.StartsWithSegments("/metrics")
+                    || path.StartsWithSegments("/auth/token");
+        return quiet ? LogEventLevel.Verbose : LogEventLevel.Information;
     }
 
     public static WebApplication MapSeatResEndpoints(this WebApplication app)
