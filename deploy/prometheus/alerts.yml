@@ -1,0 +1,43 @@
+# "What pages me at 2am", as rules. Firing alerts show on the Grafana dashboard (ALERTS series).
+groups:
+  - name: seatres-page
+    rules:
+      - alert: SeatResServerErrors
+        expr: sum(increase(http_requests_received_total{code="5xx",endpoint!~"/health.*"}[5m])) > 0
+        labels: { severity: page }
+        annotations: { summary: "The API returned 5xx in the last 5 minutes (target is zero, even under bursts)." }
+      - alert: SeatResUnhandledErrors
+        expr: increase(seatres_unhandled_errors_total[5m]) > 0
+        labels: { severity: page }
+        annotations: { summary: "Unexpected exceptions reached the last-resort handler." }
+      - alert: SeatResReconciliationFailed
+        expr: min(seatres_reconciliation_ok) < 1
+        for: 1m
+        labels: { severity: page }
+        annotations: { summary: "Seat counts or the money ledger do not reconcile — possible oversell or double charge." }
+      - alert: SeatResSeatLostRefund
+        expr: sum(increase(seatres_refunds_total{reason="seat_lost"}[15m])) > 0
+        labels: { severity: page }
+        annotations: { summary: "A customer paid after their seat was reclaimed; refunded automatically. Check gateway latency." }
+      - alert: SeatResPaymentsStuck
+        expr: seatres_payment_pending > 0
+        for: 3m
+        labels: { severity: page }
+        annotations: { summary: "Payments have been unresolved for minutes — gateway or recovery job stuck." }
+      - alert: SeatResDatabaseDown
+        expr: seatres_db_up == 0 or up{job="seatres-api"} == 0
+        for: 1m
+        labels: { severity: page }
+        annotations: { summary: "The API cannot reach Postgres (readiness is failing closed) or the API is down." }
+      - alert: SeatResPoolSaturated
+        expr: max(npgsql_db_client_connection_count{state="used",db_client_connection_pool_name="app"}) >= 30
+        for: 30s
+        labels: { severity: page }
+        annotations: { summary: "All 30 database connections busy for 30 s; requests are queueing." }
+  - name: seatres-capacity
+    rules:
+      - alert: SeatResShedding
+        expr: sum(rate(seatres_reservations_declined_total{reason="overloaded"}[5m])) > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations: { summary: "Sustained 429s: capacity planning signal, not a page." }

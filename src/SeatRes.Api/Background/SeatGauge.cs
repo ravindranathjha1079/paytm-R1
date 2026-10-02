@@ -64,10 +64,12 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
                     SeatResMetrics.Seats.RemoveLabelled(gone, state);
             _exported = current;
             SeatResMetrics.PaymentPending.Set(pending);
+            SeatResMetrics.DbUp.Set(1);
             Interlocked.Exchange(ref _lastRefreshMs, Environment.TickCount64);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            SeatResMetrics.DbUp.Set(0);
             log.LogWarning("{event} {error}", "seat_gauge.refresh_failed", ex.Message); // keep last values
         }
     }

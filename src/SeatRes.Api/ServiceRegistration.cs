@@ -34,7 +34,8 @@ public static class ServiceRegistration
         {
             var cs = sp.GetRequiredService<IConfiguration>().GetConnectionString("Db")
                      ?? throw new InvalidOperationException("ConnectionStrings:Db is required");
-            return new NpgsqlDataSourceBuilder(cs).Build();
+            var builder = new NpgsqlDataSourceBuilder(cs) { Name = "app" };
+            return builder.Build();
         });
         services.AddSingleton<Db>();
         services.AddSingleton<Migrator>();
@@ -87,6 +88,8 @@ public static class ServiceRegistration
         services.Configure<JsonOptions>(o => Json.Configure(o.SerializerOptions));
         services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 
+        // Keep /metrics to what matters: our metrics, HTTP, runtime meters and Npgsql pool meters.
+        Metrics.SuppressDefaultMetrics(new SuppressDefaultMetricOptions { SuppressEventCounters = true });
         SeatResMetrics.Initialise();
         return services;
     }

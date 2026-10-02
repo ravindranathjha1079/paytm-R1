@@ -29,6 +29,8 @@ public static class SeatResMetrics
         "seatres_gate_timeouts_total", "Per-seat gate waits that timed out and fell through to the DB.");
     public static readonly Counter DbRetries = Metrics.CreateCounter(
         "seatres_db_retries_total", "Transactions retried after a transient Postgres error.", "sqlstate");
+    public static readonly Gauge DbUp = Metrics.CreateGauge(
+        "seatres_db_up", "1 when the last scrape-time database query succeeded.");
     public static readonly Counter UnhandledErrors = Metrics.CreateCounter(
         "seatres_unhandled_errors_total", "Requests that failed with an unexpected exception (5xx).");
 

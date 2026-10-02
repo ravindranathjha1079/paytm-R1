@@ -69,7 +69,7 @@ public sealed class GatewayDataSource(IConfiguration config) : IDisposable
 {
     private readonly Lazy<NpgsqlDataSource> _source = new(() =>
         new NpgsqlDataSourceBuilder(new NpgsqlConnectionStringBuilder(config.GetConnectionString("Db")) { MaxPoolSize = 5 }.ConnectionString)
-            .Build());
+            { Name = "gateway" }.Build());
 
     public NpgsqlDataSource Source => _source.Value;
 
