@@ -431,6 +431,9 @@ async def reconcile(api: Api, show: str, confirmations: int, unhandled_before: f
     if int(counter) != confirmations:
         bad.append(f"confirmed counter {counter} != confirmations observed {confirmations}")
     unhandled = m.get("seatres_unhandled_errors_total", 0) - unhandled_before
+    if unhandled < 0:
+        notes.append("/metrics: the API restarted during the run (counters reset); unhandled-error delta unknown")
+        unhandled = m.get("seatres_unhandled_errors_total", 0)
     notes.append(f"/metrics: unhandled errors during this run: {int(unhandled)}")
     if unhandled > 0:
         bad.append(f"service recorded {int(unhandled)} unhandled errors during the run")

@@ -49,7 +49,9 @@ public sealed class Migrator(NpgsqlDataSource dataSource, ILogger<Migrator> log)
 }
 
 /// <summary>Keeps retrying migrations until the database is reachable, so a cold start in any order comes up healthy.</summary>
-public sealed class MigrationHostedService(Migrator migrator, MigrationState state, ILogger<MigrationHostedService> log)
+public sealed class MigrationHostedService(
+    Migrator migrator, MigrationState state, Concurrency.SeenKeys seenKeys, NpgsqlDataSource dataSource, TimeProvider time,
+    ILogger<MigrationHostedService> log)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,8 +61,10 @@ public sealed class MigrationHostedService(Migrator migrator, MigrationState sta
             try
             {
                 await migrator.ApplyAsync(stoppingToken);
+                // Readiness waits for this too: the memory-only decline is only exact once recent keys are known.
+                var loaded = await seenKeys.LoadAsync(dataSource, time.GetUtcNow().UtcDateTime - Concurrency.SeenKeys.Window, stoppingToken);
                 state.Applied = true;
-                log.LogInformation("migrations_ready");
+                log.LogInformation("migrations_ready {seen_keys_loaded}", loaded);
                 return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

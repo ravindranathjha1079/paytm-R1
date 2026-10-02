@@ -55,6 +55,7 @@ public static class ServiceRegistration
         services.AddSingleton<GatewayDataSource>();
         services.AddSingleton<IPaymentGateway, SimulatedGateway>();
         services.AddSingleton<TakenSeatCache>();
+        services.AddSingleton<SeenKeys>();
         services.AddSingleton<SeatGate>();
         services.AddSingleton<PaymentRecovery>();
         services.AddSingleton<Reconciler>();
@@ -82,7 +83,8 @@ public static class ServiceRegistration
             o.OnRejected = async (ctx, _) =>
             {
                 ctx.HttpContext.Response.Headers.RetryAfter = "1";
-                SeatResMetrics.Declined.WithLabels(ErrorCodes.Overloaded).Inc();
+                if (!HttpMethods.IsGet(ctx.HttpContext.Request.Method)) // read shedding is not a declined reservation
+                    SeatResMetrics.Declined.WithLabels(ErrorCodes.Overloaded).Inc();
                 await ApiResult.Fail(429, ErrorCodes.Overloaded, "server is at capacity, retry shortly").WriteAsync(ctx.HttpContext);
             };
         });
@@ -128,6 +130,7 @@ public static class ServiceRegistration
     internal static LogEventLevel RequestLogLevel(PathString path, int status, Exception? ex)
     {
         if (ex is not null || status >= 500) return LogEventLevel.Error;
+        if (status is 401 or 403) return LogEventLevel.Information; // the handler never ran, so nothing else logs it
         var quiet = path.StartsWithSegments("/shows") || path.StartsWithSegments("/reservations")
                     || path.StartsWithSegments("/health") || path.StartsWithSegments("/metrics")
                     || path.StartsWithSegments("/auth/token");

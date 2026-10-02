@@ -112,7 +112,7 @@ public class PolishTests : IDisposable
         await gauge.RefreshAsync(CancellationToken.None);
         Assert.Contains($"seatres_seats{{show=\"{show}\"", await client.GetStringAsync("/metrics"));
 
-        api.Clock.Advance(TimeSpan.FromDays(3));
+        api.Clock.Advance(SeatGauge.Window + TimeSpan.FromDays(1));
         await gauge.RefreshAsync(CancellationToken.None);
         Assert.DoesNotContain($"seatres_seats{{show=\"{show}\"", await client.GetStringAsync("/metrics"));
     }

@@ -16,13 +16,19 @@ cap_rule() { echo "-p tcp --syn --dport 9443 -m connlimit --connlimit-above $MAX
 rule() { echo "-d $IP/32 -p tcp --dport $1 -m comment --comment seatres -j REDIRECT --to-ports $2"; }
 
 remove_cap() {
-  # shellcheck disable=SC2046
-  while iptables -C INPUT $(cap_rule) 2>/dev/null; do iptables -D INPUT $(cap_rule); done
+  # Every INPUT rule seatres ever added (whatever MAX_CONNS it had), identified by its comment.
+  iptables -S INPUT | grep -- '--comment seatres' | sed 's/^-A /-D /' | while read -r spec; do
+    # shellcheck disable=SC2086
+    iptables $spec
+  done
 }
 
 ensure_cap() {
   # shellcheck disable=SC2046
-  iptables -C INPUT $(cap_rule) 2>/dev/null || iptables -I INPUT 1 $(cap_rule)
+  if ! iptables -C INPUT $(cap_rule) 2>/dev/null; then
+    remove_cap
+    iptables -I INPUT 1 $(cap_rule)
+  fi
 }
 
 remove_rules() {
@@ -37,7 +43,11 @@ remove_rules() {
 
 in_order() {
   # Our two rules must be the first two PREROUTING rules, ahead of Docker's DNAT jump.
-  [ "$(iptables -t nat -S PREROUTING | sed -n '2,3p' | grep -c 'comment seatres')" = "2" ]
+  local first second
+  first=$(iptables -t nat -S PREROUTING | sed -n '2p')
+  second=$(iptables -t nat -S PREROUTING | sed -n '3p')
+  [[ "$first" == *"-d $IP/32"*"--dport 443"*"comment seatres"*"--to-ports 9443"* ]] &&
+    [[ "$second" == *"-d $IP/32"*"--dport 80"*"comment seatres"*"--to-ports 9080"* ]]
 }
 
 up() {

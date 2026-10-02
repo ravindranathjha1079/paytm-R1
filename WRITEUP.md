@@ -61,13 +61,17 @@ Postgres still picks the single winner. The whole decision path is tested with t
   key lookup, then hit the cache ("seat taken") and was wrongly declined. Fix: a fast decline consults the
   now-committed key row first. Test: `Concurrent_retries_of_the_winning_key_all_replay_…`.
 - Confirm (payment) has its own scope; one key = one payment attempt.
-- **Holder-aware fast path.** The taken-seat cache records who holds each seat. A winning key for a seat can
-  only belong to its holder, so a decline for anyone else is answered from memory with no database read.
-  That cut the per-request database work of a storm to almost nothing. Only the holder's own requests, or
-  seats whose holder is unknown, still check the key first.
-  Trade-off: a user who retries a *winning* key more than 5 minutes later, after their expired hold went to
-  someone else, gets 409 `seat_taken` instead of a replay of the stale reservation. No extra reservation can
-  ever be created by any path.
+- **Exact memory-only declines.** In a storm almost every request is a decline, and reading the key table
+  for each one made it the largest database cost. The service now keeps a fingerprint of every
+  `(user, key)` it has accepted. Each is added right after the deciding commit, and the last 24 h are
+  reloaded at startup *before* readiness turns green. A key that was never accepted cannot be a retry of
+  anything, so when the taken-seat cache says "taken", answering 409 from memory is exactly what the
+  database would have said. Any key that may have been used (a winning retry, a reused key with a different
+  body, a retry after a cancel and re-grant, a key from before a restart) still goes to the database for its
+  replay or `idempotency_mismatch`. A fingerprint collision only costs an extra read. Live throughput went
+  up 34%. (An earlier "the holder can't be you" heuristic had real edge cases; a reviewer found them and this
+  replaced it.) The set is per process: with several replicas it would need to be shared, or the fast path
+  switched off.
 
 ## 3. Holds, expiry and payment
 

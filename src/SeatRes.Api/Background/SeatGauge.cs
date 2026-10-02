@@ -14,7 +14,7 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
 {
     private static readonly string[] States = ["available", "held", "confirmed"];
     /// <summary>Only shows created recently are exported, so the scrape stays cheap over a 10-day deployment.</summary>
-    public static readonly TimeSpan Window = TimeSpan.FromDays(2);
+    public static readonly TimeSpan Window = TimeSpan.FromDays(11); // the whole deployment lifetime
     private HashSet<string> _exported = [];
     public const long Never = -1;
     private long _lastRefreshMs = Never;
@@ -48,9 +48,11 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
                     GROUP BY 1, 2
                     """,
                     new { now, since = now - Window }, tx, cancellationToken: cts.Token))).ToList();
-                var inFlight = await c.ExecuteScalarAsync<long>(new CommandDefinition(
-                    "SELECT count(*) FROM payment_attempts WHERE status IN ('pending', 'unknown')", transaction: tx,
-                    cancellationToken: cts.Token));
+                var inFlight = await c.QuerySingleAsync<(long Count, double OldestSeconds)>(new CommandDefinition(
+                    """
+                    SELECT count(*), coalesce(extract(epoch FROM @now - min(updated_at)), 0)::float8
+                    FROM payment_attempts WHERE status IN ('pending', 'unknown')
+                    """, new { now }, tx, cancellationToken: cts.Token));
                 return (counts, inFlight);
             }, cts.Token);
 
@@ -63,13 +65,16 @@ public sealed class SeatGauge(Db db, TimeProvider time, ILogger<SeatGauge> log)
                 foreach (var state in States)
                     SeatResMetrics.Seats.RemoveLabelled(gone, state);
             _exported = current;
-            SeatResMetrics.PaymentPending.Set(pending);
+            SeatResMetrics.PaymentPending.Set(pending.Count);
+            SeatResMetrics.PaymentOldestPendingSeconds.Set(pending.OldestSeconds);
             SeatResMetrics.DbUp.Set(1);
             Interlocked.Exchange(ref _lastRefreshMs, Environment.TickCount64);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            SeatResMetrics.DbUp.Set(0);
+            // A slow gauge query under load is not an outage: only a failed connection marks the DB down.
+            if (ex is Npgsql.NpgsqlException { InnerException: not TimeoutException } and not Npgsql.PostgresException)
+                SeatResMetrics.DbUp.Set(0);
             log.LogWarning("{event} {error}", "seat_gauge.refresh_failed", ex.Message); // keep last values
         }
     }

@@ -31,6 +31,8 @@ public static class SeatResMetrics
         "seatres_db_retries_total", "Transactions retried after a transient Postgres error.", "sqlstate");
     public static readonly Counter IdempotencyLookups = Metrics.CreateCounter(
         "seatres_idempotency_lookups_total", "Idempotency-key reads against the database before deciding.");
+    public static readonly Gauge PaymentOldestPendingSeconds = Metrics.CreateGauge(
+        "seatres_payment_oldest_pending_seconds", "Age of the oldest unsettled payment attempt (0 when none).");
     public static readonly Gauge DbUp = Metrics.CreateGauge(
         "seatres_db_up", "1 when the last scrape-time database query succeeded.");
     public static readonly Counter UnhandledErrors = Metrics.CreateCounter(

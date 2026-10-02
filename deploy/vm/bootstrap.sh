@@ -50,7 +50,8 @@ fi
 
 systemctl daemon-reload
 systemctl enable --now seatres-net.service seatres-net-check.timer seatres-teardown.timer >/dev/null
-systemctl restart seatres-net.service
+# Re-assert in place; never "restart" (its ExecStop would briefly remove the IP and rules).
+/usr/local/sbin/seatres-net up
 
 # The network's subnet is fixed in compose.prod.yaml; an older network without it must be recreated.
 if docker network inspect seatres_default >/dev/null 2>&1 &&    [ "$(docker network inspect seatres_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')" != "172.31.250.0/24" ]; then

@@ -205,7 +205,7 @@ public sealed class PaymentTx(Db db, TimeProvider time, IOptions<SeatResOptions>
                         new { id = res.Id, now }, tx);
                     response = ApiResult.Fail(402, ErrorCodes.PaymentDeclined, "payment was declined; the seats were released");
                 }
-                else if (!(res.Status == ReservationStatus.PaymentPending && locked.OwnsAllSeats))
+                else if (res.Status is ReservationStatus.Expired || (res.Status == ReservationStatus.PaymentPending && !locked.OwnsAllSeats))
                 {
                     // Declined, and the pin had already lapsed and been reclaimed: there is nothing left to retry.
                     released = await ReleaseOwnedSeatsAsync(c, tx, res);

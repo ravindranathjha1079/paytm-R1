@@ -47,6 +47,9 @@ http://{$SEATRES_FQDN} {
 			lb_retry_match {
 				path /shows/*/reserve /reservations/*
 			}
+			lb_retry_match {
+				method GET
+			}
 			transport http {
 				# Bounded upstream: excess requests queue here instead of opening thousands of connections.
 				max_conns_per_host 768

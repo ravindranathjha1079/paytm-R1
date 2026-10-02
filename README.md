@@ -133,7 +133,7 @@ The service runs on an existing Azure VM shared with other apps, without touchin
   re-dials while the API restarts, and retries cut-off requests on idempotent routes only. A 12k
   connection cap refuses excess connections instead of running out of memory. Restarts and redeploys
   don't drop requests.
-- Shared-VM manners: secondary IP as /32, kernel limits only ever raised (and restored at teardown), lower
+- Shared-VM manners: secondary IP as /32, kernel limits only ever raised (restored at teardown if still ours), lower
   CPU weight than the other apps, nothing of theirs touched.
 - Teardown: a systemd timer on the VM runs `deploy/vm/teardown.sh` at the expiry, and
   `.github/workflows/teardown.yml` (GitHub OIDC, Network Contributor on that IP and NIC only) removes the

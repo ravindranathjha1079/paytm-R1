@@ -22,6 +22,6 @@ to two reservations whose holds overlap, or any reconciliation mismatch.
   queue at the edge.
 - **One client is not a load test.** A single source IP tops out at about 1k connections (NAT/SNAT, TLS in
   Python). Multi-runner shards were needed to reach about 10k.
-- **Throughput on this VM is CPU-bound.** It was about 920 req/s, and about 1,230 req/s after declines for other users' seats stopped touching the database (holder-aware cache). It is a 2-vCPU burstable machine shared
+- **Throughput on this VM is CPU-bound.** It was about 920 req/s, and about 1,230 req/s after declines for never-used keys stopped touching the database (exact memory-only declines). It is a 2-vCPU burstable machine shared
   with three other apps. The p50 under 8,400 in-flight requests is queueing time, not errors. seatres
   containers run at reduced CPU weight so the other apps win contention.

@@ -20,8 +20,8 @@ groups:
         labels: { severity: page }
         annotations: { summary: "A customer paid after their seat was reclaimed; refunded automatically. Check gateway latency." }
       - alert: SeatResPaymentsStuck
-        expr: seatres_payment_pending > 0
-        for: 3m
+        expr: seatres_payment_oldest_pending_seconds > 120
+        for: 1m
         labels: { severity: page }
         annotations: { summary: "Payments have been unresolved for minutes — gateway or recovery job stuck." }
       - alert: SeatResDatabaseDown
