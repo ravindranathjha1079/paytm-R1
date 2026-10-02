@@ -56,7 +56,8 @@ services:
       - caddyconfig:/config
     # ~57 KB per TLS connection measured: 1800M is ~28k concurrent connections; seatres-net caps at 24k
     # (the brief's ~20k concurrent, with headroom).
-    deploy: { resources: { limits: { cpus: "0.8", memory: 1800M } } }
+    # TLS handshakes are CPU: allow the edge most of the VM when it is free (cpu_shares keeps others first).
+    deploy: { resources: { limits: { cpus: "1.6", memory: 1800M } } }
     restart: unless-stopped
 
 networks:
