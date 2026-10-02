@@ -41,10 +41,8 @@ jobs:
       - run: pip install -q "httpx[http2]>=0.27"
       - name: Fire at the agreed second
         run: |
-          python tools/burst/flood.py fire '${{ inputs.base_url }}' \
-            --show '${{ fromJSON(needs.setup.outputs.plan).shows[matrix.shard % 3] }}' \
-            --shard ${{ matrix.shard }} --requests ${{ inputs.per_shard }} \
-            --start-at ${{ fromJSON(needs.setup.outputs.plan).start_at }} --out shard-${{ matrix.shard }}.json
+          python tools/burst/flood.py fire '${{ inputs.base_url }}' --plan '${{ needs.setup.outputs.plan }}' \
+            --shard ${{ matrix.shard }} --requests ${{ inputs.per_shard }} --out shard-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v4
         with: { name: "flood-shard-${{ matrix.shard }}", path: "shard-${{ matrix.shard }}.json" }
 
