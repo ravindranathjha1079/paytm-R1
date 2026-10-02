@@ -1,0 +1,26 @@
+name: live-burst
+
+# Runs the burst from a GitHub-hosted runner against the deployed service (manual trigger).
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Service URL
+        default: https://seatres-paytm.centralindia.cloudapp.azure.com
+      args:
+        description: Extra burst.py arguments
+        default: --workers 4 --concurrency 500
+
+jobs:
+  burst:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Burst
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: ./burst.sh "${{ inputs.base_url }}" ${{ inputs.args }}

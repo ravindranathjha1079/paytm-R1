@@ -37,10 +37,12 @@ class Tally:
     def __init__(self) -> None:
         self.counts: collections.Counter[str] = collections.Counter()
         self.latencies: list[float] = []
+        self.errors: collections.Counter[str] = collections.Counter()
 
     def add(self, status: int, body: dict, seconds: float) -> None:
         if status == 0:
             key = "transport-error"
+            self.errors[str(body.get("message", ""))[:120]] += 1
         elif status >= 400 and isinstance(body, dict) and body.get("error"):
             key = f"{status} {body['error']}"
         else:
@@ -51,19 +53,21 @@ class Tally:
     def merge(self, other: "Tally") -> None:
         self.counts.update(other.counts)
         self.latencies.extend(other.latencies)
+        self.errors.update(other.errors)
 
     @property
     def server_errors(self) -> int:
         return sum(n for k, n in self.counts.items() if k[:1] == "5")
 
     def to_dict(self) -> dict:
-        return {"counts": dict(self.counts), "latencies": self.latencies}
+        return {"counts": dict(self.counts), "latencies": self.latencies, "errors": dict(self.errors)}
 
     @staticmethod
     def from_dict(d: dict) -> "Tally":
         t = Tally()
         t.counts.update(d["counts"])
         t.latencies.extend(d["latencies"])
+        t.errors.update(d.get("errors", {}))
         return t
 
 
@@ -469,6 +473,11 @@ async def main(args) -> int:
         for k, v in sorted(everything.counts.items()):
             print(f"  {k:<34} {v:>8}")
         print(f"  {'5xx':<34} {everything.server_errors:>8}")
+        if everything.errors:
+            print("
+client-side transport errors (never reached a response; often the load generator itself)")
+            for msg, n in everything.errors.most_common(3):
+                print(f"  {n:>8}  {msg or '(timeout)'}")
         if lat:
             print(f"\nlatency  p50 {pct(lat, 50):.0f} ms   p99 {pct(lat, 99):.0f} ms   max {max(lat) * 1000:.0f} ms   "
                   f"mean {statistics.mean(lat) * 1000:.0f} ms")
